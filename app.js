@@ -574,7 +574,7 @@ function computeFromRawRows(rawRows) {
     const add = Number(r["添加人数"]);
     const flow = Number(r["流水"]);
     r["添加产值"] = add > 0 && Number.isFinite(flow) ? flow / add : null;
-    r["班型"] = roundHalfUp(Number(r["获客"]) / 200);
+    r["班型"] = roundHalfUp(Number(r["获客"]) / 250);
     r["班型得分"] = r["班型"] === null ? null : r["班型"] * 10;
   }
 
@@ -619,6 +619,7 @@ function initApp() {
   const fileInput = qs("#fileInput");
   const dropzone = qs("#dropzone");
   const fileMeta = qs("#fileMeta");
+  const confirmClosed = qs("#confirmClosed");
   const statusPill = qs("#statusPill");
   const summaryChips = qs("#summaryChips");
   const bandFilter = qs("#bandFilter");
@@ -642,6 +643,7 @@ function initApp() {
   let currentOverview = [];
   let currentEvidence = [];
   let activeBand = null;
+  let uploadEnabled = false;
 
   function setStatus(kind, text) {
     statusPill.className = `pill ${kind ?? ""}`.trim();
@@ -652,6 +654,14 @@ function initApp() {
     downloadResult.disabled = !enabled;
     downloadEvidence.disabled = !enabled;
     clearData.disabled = !enabled;
+  }
+
+  function setUploadEnabled(enabled) {
+    uploadEnabled = enabled;
+    fileInput.disabled = !enabled;
+    dropzone.classList.toggle("disabled", !enabled);
+    dropzone.setAttribute("aria-disabled", String(!enabled));
+    dropzone.tabIndex = enabled ? 0 : -1;
   }
 
   function renderAll() {
@@ -735,10 +745,12 @@ function initApp() {
     evidenceMeta.textContent = "";
     summaryChips.innerHTML = "";
     bandFilter.innerHTML = "";
-    fileMeta.textContent = "未上传";
-    setStatus("", "等待上传");
+    fileMeta.textContent = "未上传（请先勾选确认）";
+    confirmClosed.checked = false;
+    setUploadEnabled(false);
+    setStatus("warn", "请先确认已结营");
     setDownloadsEnabled(false);
-    overviewHint.textContent = "上传后将展示：组-班长 + 三期两维度得分 + 总分与带班数；其余过程数据可点击“展开”或切换到“过程数据（佐证）”。";
+    overviewHint.textContent = "上传后将展示：组-班长 + 三期两维度得分 + 总分与带班数；其余过程数据可点击“展开”或切换到“过程数据”。";
     evidenceHint.textContent = "";
   }
 
@@ -755,6 +767,7 @@ function initApp() {
   });
 
   async function handleFile(file) {
+    if (!uploadEnabled) return;
     if (!file) return;
     setDownloadsEnabled(false);
     setStatus("warn", "计算中");
@@ -800,21 +813,39 @@ function initApp() {
 
   clearData.addEventListener("click", () => resetUI());
 
+  confirmClosed.addEventListener("change", () => {
+    if (confirmClosed.checked) {
+      setUploadEnabled(true);
+      fileMeta.textContent = "未上传";
+      setStatus("", "等待上传");
+    } else {
+      setUploadEnabled(false);
+      fileMeta.textContent = "未上传（请先勾选确认）";
+      setStatus("warn", "请先确认已结营");
+    }
+  });
+
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     await handleFile(file);
   });
 
-  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("click", () => {
+    if (!uploadEnabled) return;
+    fileInput.click();
+  });
   dropzone.addEventListener("keydown", (e) => {
+    if (!uploadEnabled) return;
     if (e.key === "Enter" || e.key === " ") fileInput.click();
   });
   dropzone.addEventListener("dragover", (e) => {
+    if (!uploadEnabled) return;
     e.preventDefault();
     dropzone.classList.add("dragover");
   });
   dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
   dropzone.addEventListener("drop", async (e) => {
+    if (!uploadEnabled) return;
     e.preventDefault();
     dropzone.classList.remove("dragover");
     const file = e.dataTransfer?.files?.[0];
