@@ -203,6 +203,7 @@ function buildWideTable(rows) {
 
     for (const p of PERIODS) {
       const it = items.find((x) => x["最新营期"] === p);
+      const leads = it?.["获客"] ?? null;
       const classType = it?.["班型"] ?? null;
       const classScore = it?.["班型得分"] ?? null;
       const addValue = it?.["添加产值"] ?? null;
@@ -210,6 +211,7 @@ function buildWideTable(rows) {
       const rankPct = it?.["产值排名%"] ?? null;
       const valueScore = it?.["产值得分"] ?? 0;
 
+      row[`获客_${p}`] = leads;
       row[`班型_${p}`] = classType;
       row[`班型得分_${p}`] = classScore;
       row[`添加产值_${p}`] = addValue === null ? null : round2(Number(addValue));
@@ -281,6 +283,23 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
     return { t: "str", v: String(v) };
   }
 
+  function headerText(c) {
+    if (c === "产值排名%") return "产值排名百分位";
+    return c;
+  }
+
+  function cellText(c, v) {
+    if (v === null || v === undefined) return "";
+    if (c === "产值排名%") {
+      const n = typeof v === "number" && Number.isFinite(v) ? v : toNumber(v);
+      if (n === null) return "";
+      const out = round2(n);
+      if (out === null) return "";
+      return `${out.toFixed(2)}%`;
+    }
+    return String(v);
+  }
+
   function apply(rows0) {
     const tokens = tokenizeQuery(searchInput?.value ?? "");
     let filtered = rows0;
@@ -324,7 +343,7 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
     const headRow = document.createElement("tr");
     for (const c of columns) {
       const th = document.createElement("th");
-      th.textContent = c;
+      th.textContent = headerText(c);
       th.addEventListener("click", () => {
         if (sortKey === c) sortDir = -sortDir;
         else {
@@ -343,7 +362,7 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
       for (const c of columns) {
         const td = document.createElement("td");
         const v = r[c];
-        td.textContent = v === null || v === undefined ? "" : String(v);
+        td.textContent = cellText(c, v);
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
@@ -373,10 +392,11 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
     "带班数",
   ];
   const detailRows = [
+    { label: "获客", key: "获客" },
     { label: "班型", key: "班型" },
     { label: "添加产值", key: "添加产值" },
     { label: "产值排名", key: "产值排名" },
-    { label: "产值排名%", key: "产值排名%" },
+    { label: "产值排名百分位", key: "产值排名%" },
   ];
 
   let sortKey = null;
@@ -403,6 +423,17 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
     const n = toNumber(s);
     if (n !== null && s.includes(".")) return round2(n).toFixed(2);
     return s;
+  }
+
+  function valueTextByKey(key, v) {
+    if (key.includes("产值排名%")) {
+      const base = valueText(v);
+      if (!base) return "";
+      const n = toNumber(base);
+      if (n === null) return "";
+      return `${round2(n).toFixed(2)}%`;
+    }
+    return valueText(v);
   }
 
   function apply(rows0) {
@@ -469,10 +500,10 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
           const span = document.createElement("span");
           const n = Number(v);
           span.className = `badge b${Number.isFinite(n) ? n : 0}`.trim();
-          span.textContent = valueText(v);
+          span.textContent = valueTextByKey(c, v);
           td.appendChild(span);
         } else {
-          td.textContent = valueText(v);
+          td.textContent = valueTextByKey(c, v);
           if (c.includes("得分") || c === "班长总分") td.className = "num";
         }
         tr.appendChild(td);
@@ -523,7 +554,7 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
           subTr.appendChild(tdLabel);
           for (const p of PERIODS) {
             const tdV = document.createElement("td");
-            tdV.textContent = valueText(r[`${item.key}_${p}`]);
+            tdV.textContent = valueTextByKey(item.key, r[`${item.key}_${p}`]);
             subTr.appendChild(tdV);
           }
           subBody.appendChild(subTr);
