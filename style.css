@@ -37,12 +37,60 @@ body {
   max-width: 740px;
 }
 
+.alert {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid #d0d5dd;
+  background: #fcfcfd;
+  padding: 10px 12px;
+  max-width: 740px;
+}
+
+.alert-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #101828;
+  margin-bottom: 4px;
+}
+
+.alert-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #344054;
+}
+
+.alert.warn {
+  border-color: #f79009;
+  background: #fffaeb;
+}
+
 .actions {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #f79009;
+  background: #fffaeb;
+  color: #7a2e0e;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.confirm input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .file-input {
@@ -68,6 +116,12 @@ body {
   border: 1px dashed #98a2b3;
   background: #fcfcfd;
   cursor: pointer;
+}
+
+.dropzone.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background: #f2f4f7;
 }
 
 .dropzone:focus {
