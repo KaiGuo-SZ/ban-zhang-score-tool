@@ -37,33 +37,6 @@ body {
   max-width: 740px;
 }
 
-.alert {
-  margin-top: 12px;
-  border-radius: 12px;
-  border: 1px solid #d0d5dd;
-  background: #fcfcfd;
-  padding: 10px 12px;
-  max-width: 740px;
-}
-
-.alert-title {
-  font-weight: 700;
-  font-size: 13px;
-  color: #101828;
-  margin-bottom: 4px;
-}
-
-.alert-body {
-  font-size: 13px;
-  line-height: 1.5;
-  color: #344054;
-}
-
-.alert.warn {
-  border-color: #f79009;
-  background: #fffaeb;
-}
-
 .actions {
   display: flex;
   gap: 10px;
@@ -91,6 +64,25 @@ body {
   width: 16px;
   height: 16px;
   margin: 0;
+}
+
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #d0d5dd;
+  background: white;
+  color: #175cd3;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  user-select: none;
+}
+
+.help-link:hover {
+  border-color: #175cd3;
+  background: #eff4ff;
 }
 
 .file-input {

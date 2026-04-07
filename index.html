@@ -14,16 +14,19 @@
           <p class="subtitle">
             上传班级明细表 → 自动计算班长近3次带班（-1/-2/-3）两维度得分 → 输出排班建议带班数；并提供过程数据用于佐证。
           </p>
-          <div class="alert warn" id="importAlert">
-            <div class="alert-title">重要提示</div>
-            <div class="alert-body">仅导入已结营的班级数据（CSV），否则会影响分析结果。</div>
-          </div>
         </div>
         <div class="actions">
           <label class="confirm">
             <input id="confirmClosed" type="checkbox" />
             <span>我确认导入的是已结营班级数据（必选）</span>
           </label>
+          <a
+            class="help-link"
+            href="https://doc.weixin.qq.com/doc/w3_AcEALgZQAFgCNbIbQeDjxQuWyAys1?scode=AEkAIweMAA4sJ21negAcEALgZQAFg"
+            target="_blank"
+            rel="noopener noreferrer"
+            >如何下载数据？</a
+          >
           <div id="dropzone" class="dropzone" role="button" tabindex="0">
             <div class="dropzone-title">拖拽上传或点击选择文件</div>
             <div id="fileMeta" class="dropzone-meta">未上传</div>
