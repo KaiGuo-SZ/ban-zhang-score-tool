@@ -22,6 +22,15 @@ function qs(sel) {
   return el;
 }
 
+function tokenizeQuery(input) {
+  const s = String(input ?? "").trim().toLowerCase();
+  if (!s) return [];
+  return s
+    .split(/[,\s，、;；]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function toNumber(v) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -273,12 +282,17 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
   }
 
   function apply(rows0) {
-    const q = String(searchInput?.value ?? "").trim().toLowerCase();
+    const tokens = tokenizeQuery(searchInput?.value ?? "");
     let filtered = rows0;
-    if (q) {
-      filtered = rows0.filter((r) =>
-        columns.some((c) => String(r[c] ?? "").toLowerCase().includes(q)),
-      );
+    if (tokens.length > 0) {
+      filtered = rows0.filter((r) => {
+        for (const t of tokens) {
+          for (const c of columns) {
+            if (String(r[c] ?? "").toLowerCase().includes(t)) return true;
+          }
+        }
+        return false;
+      });
     }
 
     if (sortKey) {
@@ -302,6 +316,7 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
       });
     }
 
+    tableEl.__filteredRows = filtered;
     metaEl.textContent = `显示 ${filtered.length} / ${rows0.length}`;
     hintEl.textContent = filtered.length === 0 ? "未匹配到数据，请调整搜索条件或重新上传文件。" : "";
 
@@ -391,12 +406,17 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
   }
 
   function apply(rows0) {
-    const q = String(searchInput?.value ?? "").trim().toLowerCase();
+    const tokens = tokenizeQuery(searchInput?.value ?? "");
     let filtered = rows0;
-    if (q) {
-      filtered = rows0.filter((r) =>
-        ["大组", "小组", "班长"].some((c) => String(r[c] ?? "").toLowerCase().includes(q)),
-      );
+    if (tokens.length > 0) {
+      filtered = rows0.filter((r) => {
+        for (const t of tokens) {
+          for (const c of ["大组", "小组", "班长"]) {
+            if (String(r[c] ?? "").toLowerCase().includes(t)) return true;
+          }
+        }
+        return false;
+      });
     }
 
     if (sortKey) {
@@ -411,6 +431,7 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
       });
     }
 
+    tableEl.__filteredRows = filtered;
     metaEl.textContent = `显示 ${filtered.length} / ${rows0.length}`;
     hintEl.textContent = filtered.length === 0 ? "未匹配到数据，请调整搜索条件或重新上传文件。" : "";
 
@@ -755,15 +776,17 @@ function initApp() {
   }
 
   downloadResult.addEventListener("click", () => {
-    if (!currentOverview.length) return;
-    const columns = Object.keys(currentOverview[0]);
-    downloadText("班长排班得分-结果.csv", toCSV(currentOverview, columns));
+    const rows = Array.isArray(overviewTable.__filteredRows) ? overviewTable.__filteredRows : currentOverview;
+    if (!rows.length) return;
+    const columns = Object.keys(rows[0]);
+    downloadText("班长排班得分-结果.csv", toCSV(rows, columns));
   });
 
   downloadEvidence.addEventListener("click", () => {
-    if (!currentEvidence.length) return;
-    const columns = Object.keys(currentEvidence[0]);
-    downloadText("班长排班得分-过程数据.csv", toCSV(currentEvidence, columns));
+    const rows = Array.isArray(evidenceTable.__filteredRows) ? evidenceTable.__filteredRows : currentEvidence;
+    if (!rows.length) return;
+    const columns = Object.keys(rows[0]);
+    downloadText("班长排班得分-过程数据.csv", toCSV(rows, columns));
   });
 
   async function handleFile(file) {
