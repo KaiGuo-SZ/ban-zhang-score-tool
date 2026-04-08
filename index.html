@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>班长排班得分工具</title>
+    <title>班长排班得分工具 V2.0</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div class="app">
       <header class="header">
         <div class="title">
-          <h1>班长排班得分工具</h1>
+          <h1>班长排班得分工具 V2.0</h1>
           <p class="subtitle">
-            上传班级明细表 → 自动计算班长近3次带班（-1/-2/-3）两维度得分 → 输出排班建议带班数；并提供过程数据用于佐证。
+            上传班级明细表 → 自动计算班长近3次带班（-1/-2/-3）两维度得分 → 输出排班建议带班数；并基于大盘产值判定 PIP/淘汰。
           </p>
         </div>
         <div class="actions">
@@ -35,6 +35,7 @@
           <div class="btn-group">
             <button id="downloadResult" class="btn secondary" disabled>下载结果CSV</button>
             <button id="downloadEvidence" class="btn secondary" disabled>下载过程CSV</button>
+            <button id="downloadPip" class="btn secondary" disabled>下载PIP&淘汰CSV</button>
             <button id="clearData" class="btn tertiary" disabled>清空</button>
           </div>
         </div>
@@ -73,6 +74,9 @@
                   <li>若班长仅有2期数据，则 -3 期的【产值得分/班型得分】取 -1 与 -2 的平均得分；若仅1期数据则按实际期计算</li>
                   <li>添加产值 = 流水 / 添加人数；按营期做添加产值排名与百分位产值排名%</li>
                   <li>
+                    PIP/淘汰：先按营期汇总大盘产值（流水 / 添加人数）；若班长添加产值低于大盘产值，记为“低于大盘”。连续2期低于大盘，或近3期内有2期低于大盘 → PIP；近4期至少3期低于大盘且最新一期低于大盘 → 淘汰
+                  </li>
+                  <li>
                     产值得分：同营期按添加产值降序排名；排名% = 产值排名 / 当期有效人数 * 100；前20%（含）40分，20%~50%（含）30分，50%~60%（含）20分，60%~80%（含）10分，其余0分；添加产值缺失得0分
                   </li>
                   <li>班型得分：班型 = 四舍五入(获客 / 250)（0.5进1）；班型得分 = 班型 * 10</li>
@@ -86,6 +90,7 @@
       <nav class="tabs">
         <button class="tab active" data-tab="overview">总览</button>
         <button class="tab" data-tab="evidence">过程数据</button>
+        <button class="tab" data-tab="pip">PIP&淘汰</button>
       </nav>
 
       <main class="main">
@@ -110,6 +115,17 @@
             <table id="evidenceTable" class="table"></table>
           </div>
           <div id="evidenceHint" class="hint"></div>
+        </section>
+
+        <section id="pip" class="tab-content">
+          <div class="toolbar">
+            <input id="pipSearch" class="search" placeholder="搜索：班长 / 小组 / 大组 / PIP / 淘汰（支持空格/逗号/换行分隔多个值）" />
+            <span id="pipMeta" class="meta"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="pipTable" class="table"></table>
+          </div>
+          <div id="pipHint" class="hint"></div>
         </section>
       </main>
 

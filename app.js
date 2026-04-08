@@ -15,6 +15,7 @@ const GROUP_MAP = new Map([
 
 const REQUIRED_COLUMNS = ["营期", "班级", "小组", "获客", "流水", "添加人数"];
 const PERIODS = [-1, -2, -3];
+const PIP_PERIODS = [-1, -2, -3, -4];
 
 function qs(sel) {
   const el = document.querySelector(sel);
@@ -133,6 +134,12 @@ function groupBy(rows, keyFn) {
   return map;
 }
 
+function yesNo(v) {
+  if (v === true) return "是";
+  if (v === false) return "否";
+  return "";
+}
+
 function assignLatestPeriodByLeader(rows) {
   const byLeader = groupBy(rows, (r) => r["班长"]);
   const out = [];
@@ -200,7 +207,7 @@ function assignRankAndScore(rows) {
 }
 
 function buildWideTable(rows) {
-  const byLeader = groupBy(rows.filter((r) => PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
+  const byLeader = groupBy(rows.filter((r) => PIP_PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
   const leaders = [];
 
   for (const [leader, items] of byLeader.entries()) {
@@ -233,6 +240,23 @@ function buildWideTable(rows) {
       row[`产值得分_${p}`] = valueScore;
     }
 
+    const belowByPeriod = new Map();
+    for (const p of PIP_PERIODS) {
+      const it = items.find((x) => x["最新营期"] === p);
+      const below = it?.["低于大盘"];
+      belowByPeriod.set(p, below === true);
+    }
+    const b1 = belowByPeriod.get(-1) === true;
+    const b2 = belowByPeriod.get(-2) === true;
+    const b3 = belowByPeriod.get(-3) === true;
+    const b4 = belowByPeriod.get(-4) === true;
+    const count3 = [b1, b2, b3].filter(Boolean).length;
+    const count4 = [b1, b2, b3, b4].filter(Boolean).length;
+    const pip = (b1 && b2) || count3 >= 2;
+    const eliminated = b1 && count4 >= 3;
+    row["PIP"] = pip ? "PIP" : "";
+    row["淘汰"] = eliminated ? "淘汰" : "";
+
     const availablePeriods = new Set(items.map((x) => x["最新营期"]).filter((x) => x !== null));
     if (availablePeriods.size === 2 && availablePeriods.has(-1) && availablePeriods.has(-2) && !availablePeriods.has(-3)) {
       const a1 = Number(row["产值得分_-1"] ?? 0) || 0;
@@ -257,6 +281,58 @@ function buildWideTable(rows) {
     if (band !== 0) return band;
     const score = (Number(b["班长总分"] ?? 0) || 0) - (Number(a["班长总分"] ?? 0) || 0);
     if (score !== 0) return score;
+    const g = String(a["大组"]).localeCompare(String(b["大组"]), "zh");
+    if (g !== 0) return g;
+    const s = String(a["小组"]).localeCompare(String(b["小组"]), "zh");
+    if (s !== 0) return s;
+    return String(a["班长"]).localeCompare(String(b["班长"]), "zh");
+  });
+
+  return leaders;
+}
+
+function buildPipTable(rows) {
+  const byLeader = groupBy(rows.filter((r) => PIP_PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
+  const leaders = [];
+
+  for (const [leader, items] of byLeader.entries()) {
+    const pNeg1 = items.find((x) => x["最新营期"] === -1);
+    const row = {
+      班长: leader,
+      大组: String(pNeg1?.["大组"] ?? "未分组"),
+      小组: String(pNeg1?.["小组"] ?? "暂无小组"),
+    };
+
+    const belowFlags = [];
+    for (const p of PIP_PERIODS) {
+      const it = items.find((x) => x["最新营期"] === p);
+      const term = it?.["营期"] ?? null;
+      const addValue = it?.["添加产值"] ?? null;
+      const market = it?.["大盘产值"] ?? null;
+      const below = it?.["低于大盘"] ?? null;
+      row[`营期_${p}`] = term;
+      row[`添加产值_${p}`] = addValue === null ? null : round2(Number(addValue));
+      row[`大盘产值_${p}`] = market === null ? null : round2(Number(market));
+      row[`低于大盘_${p}`] = yesNo(below);
+      belowFlags.push(below === true);
+    }
+
+    const b1 = belowFlags[0] === true;
+    const b2 = belowFlags[1] === true;
+    const b3 = belowFlags[2] === true;
+    const count3 = [b1, b2, b3].filter(Boolean).length;
+    const pip = (b1 && b2) || count3 >= 2;
+    const eliminated = b1 && belowFlags.filter(Boolean).length >= 3;
+    row["PIP"] = pip ? "PIP" : "";
+    row["淘汰"] = eliminated ? "淘汰" : "";
+    leaders.push(row);
+  }
+
+  leaders.sort((a, b) => {
+    const elim = String(b["淘汰"] ?? "").localeCompare(String(a["淘汰"] ?? ""), "zh");
+    if (elim !== 0) return elim;
+    const pip = String(b["PIP"] ?? "").localeCompare(String(a["PIP"] ?? ""), "zh");
+    if (pip !== 0) return pip;
     const g = String(a["大组"]).localeCompare(String(b["大组"]), "zh");
     if (g !== 0) return g;
     const s = String(a["小组"]).localeCompare(String(b["小组"]), "zh");
@@ -297,8 +373,8 @@ function downloadText(filename, text) {
 }
 
 function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl, searchColumns }) {
-  let sortKey = "带班数";
-  let sortDir = -1;
+  let sortKey = columns.includes("带班数") ? "带班数" : null;
+  let sortDir = sortKey ? -1 : 1;
 
   function normalizeForSort(v) {
     if (v === null || v === undefined) return { t: "null", v: "" };
@@ -425,6 +501,8 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
     "班型得分_-3",
     "班长总分",
     "带班数",
+    "PIP",
+    "淘汰",
   ];
   const detailRows = [
     { label: "获客", key: "获客" },
@@ -537,6 +615,16 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
           span.className = `badge b${Number.isFinite(n) ? n : 0}`.trim();
           span.textContent = valueTextByKey(c, v);
           td.appendChild(span);
+        } else if (c === "PIP" && String(v ?? "") === "PIP") {
+          const span = document.createElement("span");
+          span.className = "badge pip";
+          span.textContent = "PIP";
+          td.appendChild(span);
+        } else if (c === "淘汰" && String(v ?? "") === "淘汰") {
+          const span = document.createElement("span");
+          span.className = "badge elim";
+          span.textContent = "淘汰";
+          td.appendChild(span);
         } else {
           td.textContent = valueTextByKey(c, v);
           if (c.includes("得分") || c === "班长总分") td.className = "num";
@@ -618,6 +706,206 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
   apply(rows);
 }
 
+function renderPipTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
+  const columns = ["大组", "小组", "班长", "PIP", "淘汰", "低于大盘_-1", "低于大盘_-2", "低于大盘_-3", "低于大盘_-4"];
+  const detailRows = [
+    { label: "营期", key: "营期" },
+    { label: "添加产值", key: "添加产值" },
+    { label: "大盘产值", key: "大盘产值" },
+    { label: "低于大盘", key: "低于大盘" },
+  ];
+
+  let sortKey = null;
+  let sortDir = 1;
+
+  const expanded = tableEl.__expandedKeys instanceof Set ? tableEl.__expandedKeys : new Set();
+  tableEl.__expandedKeys = expanded;
+
+  function normalizeForSort(v) {
+    if (v === null || v === undefined) return { t: "null", v: "" };
+    if (typeof v === "number" && Number.isFinite(v)) return { t: "num", v };
+    const n = toNumber(v);
+    if (n !== null) return { t: "num", v: n };
+    return { t: "str", v: String(v) };
+  }
+
+  function valueText(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (Number.isInteger(v)) return String(v);
+      return round2(v).toFixed(2);
+    }
+    const s = String(v);
+    const n = toNumber(s);
+    if (n !== null && s.includes(".")) return round2(n).toFixed(2);
+    return s;
+  }
+
+  function apply(rows0) {
+    const tokens = tokenizeQuery(searchInput?.value ?? "");
+    let filtered = rows0;
+    if (tokens.length > 0) {
+      filtered = rows0.filter((r) => {
+        const hay = [r["大组"], r["小组"], r["班长"], r["PIP"], r["淘汰"]].map((x) => String(x ?? "")).join("\u0001").toLowerCase();
+        for (const t of tokens) if (hay.includes(t)) return true;
+        return false;
+      });
+    }
+
+    if (sortKey) {
+      const key = sortKey;
+      const dir = sortDir;
+      filtered = [...filtered].sort((a, b) => {
+        const av = normalizeForSort(a[key]);
+        const bv = normalizeForSort(b[key]);
+        if (av.t !== bv.t) return av.t.localeCompare(bv.t) * dir;
+        if (av.t === "num") return (av.v - bv.v) * dir;
+        return String(av.v).localeCompare(String(bv.v), "zh") * dir;
+      });
+    } else {
+      filtered = [...filtered].sort((a, b) => {
+        const elim = String(b["淘汰"] ?? "").localeCompare(String(a["淘汰"] ?? ""), "zh");
+        if (elim !== 0) return elim;
+        const pip = String(b["PIP"] ?? "").localeCompare(String(a["PIP"] ?? ""), "zh");
+        if (pip !== 0) return pip;
+        const g = String(a["大组"]).localeCompare(String(b["大组"]), "zh");
+        if (g !== 0) return g;
+        const s = String(a["小组"]).localeCompare(String(b["小组"]), "zh");
+        if (s !== 0) return s;
+        return String(a["班长"]).localeCompare(String(b["班长"]), "zh");
+      });
+    }
+
+    tableEl.__filteredRows = filtered;
+    metaEl.textContent = `显示 ${filtered.length} / ${rows0.length}`;
+    hintEl.textContent = filtered.length === 0 ? "未匹配到数据，请调整搜索条件或重新上传文件。" : "";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    for (const c of columns) {
+      const th = document.createElement("th");
+      th.textContent = c;
+      th.addEventListener("click", () => {
+        if (sortKey === c) sortDir = -sortDir;
+        else {
+          sortKey = c;
+          sortDir = 1;
+        }
+        apply(rows0);
+      });
+      headRow.appendChild(th);
+    }
+    const thMore = document.createElement("th");
+    thMore.textContent = "详情";
+    thMore.className = "no-sort";
+    headRow.appendChild(thMore);
+    thead.appendChild(headRow);
+
+    const tbody = document.createElement("tbody");
+    for (const r of filtered) {
+      const key = String(r["班长"] ?? "");
+      const isOpen = expanded.has(key);
+
+      const tr = document.createElement("tr");
+      for (const c of columns) {
+        const td = document.createElement("td");
+        const v = r[c];
+        if (c === "PIP" && String(v ?? "") === "PIP") {
+          const span = document.createElement("span");
+          span.className = "badge pip";
+          span.textContent = "PIP";
+          td.appendChild(span);
+        } else if (c === "淘汰" && String(v ?? "") === "淘汰") {
+          const span = document.createElement("span");
+          span.className = "badge elim";
+          span.textContent = "淘汰";
+          td.appendChild(span);
+        } else if (c.startsWith("低于大盘_")) {
+          const s = String(v ?? "");
+          if (s === "是" || s === "否") {
+            const span = document.createElement("span");
+            span.className = `badge ${s === "是" ? "low-yes" : "low-no"}`.trim();
+            span.textContent = s;
+            td.appendChild(span);
+          } else td.textContent = "";
+        } else td.textContent = valueText(v);
+        tr.appendChild(td);
+      }
+
+      const tdMore = document.createElement("td");
+      tdMore.className = "detail-toggle";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = isOpen ? "收起" : "展开";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const cur = expanded.has(key);
+        if (cur) expanded.delete(key);
+        else expanded.add(key);
+        apply(rows0);
+      });
+      tdMore.appendChild(btn);
+      tr.appendChild(tdMore);
+      tbody.appendChild(tr);
+
+      if (isOpen) {
+        const trDetail = document.createElement("tr");
+        trDetail.className = "detail-row";
+        const td = document.createElement("td");
+        td.colSpan = columns.length + 1;
+
+        const box = document.createElement("div");
+        box.className = "detail-box";
+
+        const sub = document.createElement("table");
+        sub.className = "subtable";
+        const subHead = document.createElement("thead");
+        const subHeadTr = document.createElement("tr");
+        ["指标", "-1", "-2", "-3", "-4"].forEach((h) => {
+          const th = document.createElement("th");
+          th.textContent = h;
+          subHeadTr.appendChild(th);
+        });
+        subHead.appendChild(subHeadTr);
+        sub.appendChild(subHead);
+
+        const subBody = document.createElement("tbody");
+        for (const item of detailRows) {
+          const subTr = document.createElement("tr");
+          const tdLabel = document.createElement("td");
+          tdLabel.textContent = item.label;
+          subTr.appendChild(tdLabel);
+          for (const p of PIP_PERIODS) {
+            const tdV = document.createElement("td");
+            tdV.textContent = valueText(r[`${item.key}_${p}`]);
+            subTr.appendChild(tdV);
+          }
+          subBody.appendChild(subTr);
+        }
+        sub.appendChild(subBody);
+
+        box.appendChild(sub);
+        td.appendChild(box);
+        trDetail.appendChild(td);
+        tbody.appendChild(trDetail);
+      }
+    }
+
+    tableEl.innerHTML = "";
+    tableEl.appendChild(thead);
+    tableEl.appendChild(tbody);
+  }
+
+  if (searchInput) {
+    const prev = searchInput.__boundApply;
+    if (typeof prev === "function") searchInput.removeEventListener("input", prev);
+    const next = debounce(() => apply(rows), 120);
+    searchInput.__boundApply = next;
+    searchInput.addEventListener("input", next);
+  }
+  apply(rows);
+}
+
 function setActiveTab(tabName) {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tabName));
   document.querySelectorAll(".tab-content").forEach((s) => s.classList.toggle("active", s.id === tabName));
@@ -670,6 +958,13 @@ function computeFromRawRows(rawRows) {
 
   for (const r of aggregated) r["大组"] = GROUP_MAP.get(r["小组"]) ?? (r["小组"] === "暂无小组" ? "未分组" : "未分组");
 
+  const marketByTerm = new Map();
+  for (const [term, items] of groupBy(aggregated, (r) => r["营期"]).entries()) {
+    const sumFlow = items.reduce((acc, it) => acc + (Number(it["流水"] ?? 0) || 0), 0);
+    const sumAdd = items.reduce((acc, it) => acc + (Number(it["添加人数"] ?? 0) || 0), 0);
+    marketByTerm.set(term, sumAdd > 0 ? sumFlow / sumAdd : null);
+  }
+
   const withPeriods = assignLatestPeriodByLeader(aggregated);
 
   for (const r of withPeriods) {
@@ -678,6 +973,9 @@ function computeFromRawRows(rawRows) {
     r["添加产值"] = add > 0 && Number.isFinite(flow) ? flow / add : null;
     r["班型"] = roundHalfUp(Number(r["获客"]) / 250);
     r["班型得分"] = r["班型"] === null ? null : r["班型"] * 10;
+    r["大盘产值"] = marketByTerm.get(r["营期"]) ?? null;
+    r["低于大盘"] =
+      r["添加产值"] !== null && r["大盘产值"] !== null ? Number(r["添加产值"]) < Number(r["大盘产值"]) : null;
   }
 
   const withRank = assignRankAndScore(withPeriods);
@@ -691,6 +989,8 @@ function computeFromRawRows(rawRows) {
       流水: r["流水"],
       添加人数: r["添加人数"],
       添加产值: r["添加产值"] === null ? null : round2(r["添加产值"]),
+      大盘产值: r["大盘产值"] === null ? null : round2(r["大盘产值"]),
+      低于大盘: yesNo(r["低于大盘"]),
       最新营期: r["最新营期"],
       产值排名: r["产值排名"],
       "产值排名%": r["产值排名%"],
@@ -705,8 +1005,9 @@ function computeFromRawRows(rawRows) {
     });
 
   const overview = buildWideTable(withRank);
+  const pip = buildPipTable(withRank);
 
-  return { overview, evidence };
+  return { overview, evidence, pip };
 }
 
 function initTabs() {
@@ -729,21 +1030,27 @@ function initApp() {
 
   const overviewTable = qs("#overviewTable");
   const evidenceTable = qs("#evidenceTable");
+  const pipTable = qs("#pipTable");
 
   const overviewSearch = qs("#overviewSearch");
   const evidenceSearch = qs("#evidenceSearch");
+  const pipSearch = qs("#pipSearch");
 
   const overviewMeta = qs("#overviewMeta");
   const evidenceMeta = qs("#evidenceMeta");
+  const pipMeta = qs("#pipMeta");
 
   const overviewHint = qs("#overviewHint");
   const evidenceHint = qs("#evidenceHint");
+  const pipHint = qs("#pipHint");
 
   const downloadResult = qs("#downloadResult");
   const downloadEvidence = qs("#downloadEvidence");
+  const downloadPip = qs("#downloadPip");
 
   let currentOverview = [];
   let currentEvidence = [];
+  let currentPip = [];
   let activeBand = null;
   let uploadEnabled = false;
 
@@ -755,6 +1062,7 @@ function initApp() {
   function setDownloadsEnabled(enabled) {
     downloadResult.disabled = !enabled;
     downloadEvidence.disabled = !enabled;
+    downloadPip.disabled = !enabled;
     clearData.disabled = !enabled;
   }
 
@@ -785,6 +1093,8 @@ function initApp() {
       "流水",
       "添加人数",
       "添加产值",
+      "大盘产值",
+      "低于大盘",
       "最新营期",
       "产值排名",
       "产值排名%",
@@ -798,6 +1108,12 @@ function initApp() {
       metaEl: evidenceMeta,
       hintEl: evidenceHint,
       searchColumns: ["营期", "班长", "小组", "大组"],
+    });
+
+    renderPipTable(pipTable, currentPip, {
+      searchInput: pipSearch,
+      metaEl: pipMeta,
+      hintEl: pipHint,
     });
   }
 
@@ -839,13 +1155,17 @@ function initApp() {
   function resetUI() {
     currentOverview = [];
     currentEvidence = [];
+    currentPip = [];
     activeBand = null;
     overviewSearch.value = "";
     evidenceSearch.value = "";
+    pipSearch.value = "";
     overviewTable.innerHTML = "";
     evidenceTable.innerHTML = "";
+    pipTable.innerHTML = "";
     overviewMeta.textContent = "";
     evidenceMeta.textContent = "";
+    pipMeta.textContent = "";
     summaryChips.innerHTML = "";
     bandFilter.innerHTML = "";
     fileMeta.textContent = "未上传（请先勾选确认）";
@@ -855,6 +1175,7 @@ function initApp() {
     setDownloadsEnabled(false);
     overviewHint.textContent = "上传后将展示：组-班长 + 三期两维度得分 + 总分与带班数；其余过程数据可点击“展开”或切换到“过程数据”。";
     evidenceHint.textContent = "";
+    pipHint.textContent = "用于判断：是否低于当期大盘产值、是否触发 PIP/淘汰；默认展示近4期过程数据。";
   }
 
   downloadResult.addEventListener("click", () => {
@@ -869,6 +1190,13 @@ function initApp() {
     if (!rows.length) return;
     const columns = Object.keys(rows[0]);
     downloadText("班长排班得分-过程数据.csv", toCSV(rows, columns));
+  });
+
+  downloadPip.addEventListener("click", () => {
+    const rows = Array.isArray(pipTable.__filteredRows) ? pipTable.__filteredRows : currentPip;
+    if (!rows.length) return;
+    const columns = Object.keys(rows[0]);
+    downloadText("班长排班得分-PIP淘汰.csv", toCSV(rows, columns));
   });
 
   async function handleFile(file) {
@@ -886,9 +1214,10 @@ function initApp() {
         if (!headers.includes(c)) throw new Error(`上传文件缺少字段：${c}`);
       }
       if (rows.length === 0) throw new Error("文件无数据行");
-      const { overview, evidence } = computeFromRawRows(rows);
+      const { overview, evidence, pip } = computeFromRawRows(rows);
       currentOverview = overview;
       currentEvidence = evidence;
+      currentPip = pip;
       activeBand = null;
       renderBandFilter();
       renderAll();
@@ -896,6 +1225,7 @@ function initApp() {
       setStatus("ok", "已完成");
       overviewHint.textContent = "已完成计算。总览默认按带班数与总分从高到低排序；点击“展开”可查看班型/产值等佐证数据。";
       evidenceHint.textContent = "可通过搜索框按营期/班长快速定位并导出。";
+      pipHint.textContent = "可通过搜索框按班长/组别定位；导出用于策略运营做 PIP/淘汰辅助决策。";
       setActiveTab("overview");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -904,12 +1234,15 @@ function initApp() {
       evidenceHint.textContent = "";
       currentOverview = [];
       currentEvidence = [];
+      currentPip = [];
       summaryChips.innerHTML = "";
       bandFilter.innerHTML = "";
       overviewTable.innerHTML = "";
       evidenceTable.innerHTML = "";
+      pipTable.innerHTML = "";
       overviewMeta.textContent = "";
       evidenceMeta.textContent = "";
+      pipMeta.textContent = "";
       setDownloadsEnabled(false);
     } finally {
       fileInput.value = "";

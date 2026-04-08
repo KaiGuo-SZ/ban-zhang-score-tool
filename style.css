@@ -428,6 +428,30 @@ body {
   color: #344054;
 }
 
+.badge.pip {
+  border-color: #f79009;
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.badge.elim {
+  border-color: #f04438;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.badge.low-yes {
+  border-color: #f04438;
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.badge.low-no {
+  border-color: #12b76a;
+  background: #ecfdf3;
+  color: #027a48;
+}
+
 .table tbody tr:hover td {
   background: #f9fafb;
 }
