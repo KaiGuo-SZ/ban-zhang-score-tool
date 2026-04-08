@@ -25,10 +25,17 @@ function qs(sel) {
 function tokenizeQuery(input) {
   const s = String(input ?? "").trim().toLowerCase();
   if (!s) return [];
-  return s
-    .split(/[,\s，、;；]+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const parts = s.match(/[^\s,，、;；]+/g) ?? [];
+  const seen = new Set();
+  const out = [];
+  for (const p of parts) {
+    const t = String(p ?? "").trim();
+    if (!t) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
 }
 
 function toNumber(v) {
@@ -49,6 +56,14 @@ function round2(n) {
 function roundHalfUp(x) {
   if (!Number.isFinite(x)) return null;
   return Math.floor(x + 0.5);
+}
+
+function debounce(fn, waitMs) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), waitMs);
+  };
 }
 
 function cleanLeaderName(name) {
@@ -199,8 +214,6 @@ function buildWideTable(rows) {
     row["小组"] = String(pNeg1?.["小组"] ?? "暂无小组");
     row["大组"] = String(pNeg1?.["大组"] ?? "未分组");
 
-    let total = 0;
-
     for (const p of PERIODS) {
       const it = items.find((x) => x["最新营期"] === p);
       const leads = it?.["获客"] ?? null;
@@ -218,10 +231,22 @@ function buildWideTable(rows) {
       row[`产值排名_${p}`] = rank;
       row[`产值排名%_${p}`] = rankPct === null ? null : round2(Number(rankPct));
       row[`产值得分_${p}`] = valueScore;
-
-      total += (Number(classScore ?? 0) || 0) + (Number(valueScore ?? 0) || 0);
     }
 
+    const availablePeriods = new Set(items.map((x) => x["最新营期"]).filter((x) => x !== null));
+    if (availablePeriods.size === 2 && availablePeriods.has(-1) && availablePeriods.has(-2) && !availablePeriods.has(-3)) {
+      const a1 = Number(row["产值得分_-1"] ?? 0) || 0;
+      const a2 = Number(row["产值得分_-2"] ?? 0) || 0;
+      const b1 = Number(row["班型得分_-1"] ?? 0) || 0;
+      const b2 = Number(row["班型得分_-2"] ?? 0) || 0;
+      row["产值得分_-3"] = round2((a1 + a2) / 2);
+      row["班型得分_-3"] = round2((b1 + b2) / 2);
+    }
+
+    let total = 0;
+    for (const p of PERIODS) {
+      total += (Number(row[`班型得分_${p}`] ?? 0) || 0) + (Number(row[`产值得分_${p}`] ?? 0) || 0);
+    }
     row["班长总分"] = total;
     row["带班数"] = total < 120 ? 1 : total < 150 ? 2 : total < 180 ? 3 : 4;
     leaders.push(row);
@@ -271,7 +296,7 @@ function downloadText(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
+function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl, searchColumns }) {
   let sortKey = "带班数";
   let sortDir = -1;
 
@@ -304,11 +329,15 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
     const tokens = tokenizeQuery(searchInput?.value ?? "");
     let filtered = rows0;
     if (tokens.length > 0) {
+      const cols = Array.isArray(searchColumns) && searchColumns.length > 0 ? searchColumns : columns;
+      const cacheKey = `__searchText__${cols.join("|")}`;
       filtered = rows0.filter((r) => {
+        const hay =
+          typeof r[cacheKey] === "string"
+            ? r[cacheKey]
+            : (r[cacheKey] = cols.map((c) => String(r[c] ?? "")).join("\u0001").toLowerCase());
         for (const t of tokens) {
-          for (const c of columns) {
-            if (String(r[c] ?? "").toLowerCase().includes(t)) return true;
-          }
+          if (hay.includes(t)) return true;
         }
         return false;
       });
@@ -373,7 +402,13 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl }) {
     tableEl.appendChild(tbody);
   }
 
-  if (searchInput) searchInput.addEventListener("input", () => apply(rows));
+  if (searchInput) {
+    const prev = searchInput.__boundApply;
+    if (typeof prev === "function") searchInput.removeEventListener("input", prev);
+    const next = debounce(() => apply(rows), 120);
+    searchInput.__boundApply = next;
+    searchInput.addEventListener("input", next);
+  }
   apply(rows);
 }
 
@@ -573,7 +608,13 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
     tableEl.appendChild(tbody);
   }
 
-  if (searchInput) searchInput.addEventListener("input", () => apply(rows));
+  if (searchInput) {
+    const prev = searchInput.__boundApply;
+    if (typeof prev === "function") searchInput.removeEventListener("input", prev);
+    const next = debounce(() => apply(rows), 120);
+    searchInput.__boundApply = next;
+    searchInput.addEventListener("input", next);
+  }
   apply(rows);
 }
 
@@ -756,6 +797,7 @@ function initApp() {
       searchInput: evidenceSearch,
       metaEl: evidenceMeta,
       hintEl: evidenceHint,
+      searchColumns: ["营期", "班长", "小组", "大组"],
     });
   }
 
