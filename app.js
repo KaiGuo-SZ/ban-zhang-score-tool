@@ -587,7 +587,16 @@ function computeFromRawRows(rawRows) {
     if (!(col in rawRows[0])) throw new Error(`缺少字段：${col}`);
   }
 
-  const normalized = rawRows.map((r) => {
+  const filteredRawRows = rawRows.filter((r) => {
+    const project = String(r["项目"] ?? "").trim();
+    const term = toNumber(r["营期"]);
+    if (project === "英语" && term === 10) return false;
+    return true;
+  });
+
+  if (filteredRawRows.length === 0) throw new Error("过滤后无有效数据，请检查导入文件是否正确。");
+
+  const normalized = filteredRawRows.map((r) => {
     const term = toNumber(r["营期"]);
     const leaderRaw = r["班级"];
     const leader = cleanLeaderName(leaderRaw);
