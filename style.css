@@ -45,6 +45,21 @@ body {
   justify-content: flex-end;
 }
 
+.analysis-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #344054;
+}
+
+.analysis-date input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #d0d5dd;
+  font-family: inherit;
+}
+
 .confirm {
   display: inline-flex;
   align-items: center;

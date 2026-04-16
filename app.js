@@ -1,19 +1,4 @@
-const GROUP_MAP = new Map([
-  ["两广总督", "社群一部"],
-  ["双面鬼龙", "社群一部"],
-  ["量子启明", "社群一部"],
-  ["金戈铁马", "社群一部"],
-  ["超星不凡", "社群一部"],
-  ["北斗七星", "社群一部"],
-  ["梦之队", "社群二部"],
-  ["纵横四海", "社群二部"],
-  ["铃兰泽门", "社群三部"],
-  ["铃兰邓门", "社群三部"],
-  ["铃兰中学", "社群三部"],
-  ["暂无小组", "未分组"],
-]);
-
-const REQUIRED_COLUMNS = ["营期", "班级", "小组", "获客", "流水", "添加人数"];
+const REQUIRED_COLUMNS = ["项目", "营期", "开营时间", "班级", "小组", "大组", "获客", "流水", "添加人数"];
 const PERIODS = [-1, -2, -3];
 const PIP_PERIODS = [-1, -2, -3, -4];
 
@@ -73,14 +58,44 @@ function cleanLeaderName(name) {
   return s.replace(/[（(].*$/, "").trim();
 }
 
+function parseDate(s) {
+  if (!s) return null;
+  let cleaned = String(s).trim();
+  if (!cleaned) return null;
+  
+  // 处理常见的日期格式：2026/4/6, 2026-4-6, 2026年4月6日
+  cleaned = cleaned.replace(/年|月/g, "/").replace(/日/g, "");
+  cleaned = cleaned.replace(/-/g, "/");
+  
+  // 如果格式是 "4/6" 或 "04/06"，自动补全当前年份
+  const parts = cleaned.split("/");
+  if (parts.length === 2) {
+    const currentYear = new Date().getFullYear();
+    cleaned = `${currentYear}/${cleaned}`;
+  }
+  
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function decodeFileToText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error("读取文件失败"));
     reader.onload = () => {
       const buf = reader.result;
+      const view = new Uint8Array(buf);
+      
+      let encoding = "utf-8";
+      // 简单的 UTF-16LE 检测 (BOM: FF FE)
+      if (view.length >= 2 && view[0] === 0xff && view[1] === 0xfe) {
+        encoding = "utf-16le";
+      } else if (view.length >= 2 && view[0] === 0xfe && view[1] === 0xff) {
+        encoding = "utf-16be";
+      }
+      
       try {
-        const text = new TextDecoder("utf-16le").decode(buf);
+        const text = new TextDecoder(encoding).decode(buf);
         resolve(text);
       } catch (e) {
         reject(e);
@@ -90,15 +105,29 @@ function decodeFileToText(file) {
   });
 }
 
-function parseTSV(text) {
-  const lines = text.split(/\r\n|\n|\r/).filter((l) => l !== "");
+function parseTSV(text0) {
+  // 去除 BOM
+  const text = text0.startsWith("\ufeff") ? text0.slice(1) : text0;
+  const lines = text.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return { rows: [], headers: [] };
-  const headers = lines[0].split("\t").map((h) => h.trim());
+  
+  // 自动检测分隔符：取第一行看逗号多还是制表符多
+  const firstLine = lines[0];
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const sep = tabCount >= commaCount ? "\t" : ",";
+  
+  const headers = firstLine.split(sep).map((h) => h.trim().replace(/^["']|["']$/g, ""));
   const rows = [];
   for (let i = 1; i < lines.length; i += 1) {
-    const cols = lines[i].split("\t");
+    const cols = lines[i].split(sep);
     const obj = {};
-    for (let j = 0; j < headers.length; j += 1) obj[headers[j]] = cols[j] ?? "";
+    for (let j = 0; j < headers.length; j += 1) {
+      let val = (cols[j] ?? "").trim();
+      // 去除引号
+      val = val.replace(/^["']|["']$/g, "");
+      obj[headers[j]] = val;
+    }
     rows.push(obj);
   }
   return { rows, headers };
@@ -231,6 +260,7 @@ function buildWideTable(rows) {
       const rankPct = it?.["产值排名%"] ?? null;
       const valueScore = it?.["产值得分"] ?? 0;
 
+      row[`营期_${p}`] = it?.["营期"] ?? null;
       row[`获客_${p}`] = leads;
       row[`班型_${p}`] = classType;
       row[`班型得分_${p}`] = classScore;
@@ -505,6 +535,7 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
     "淘汰",
   ];
   const detailRows = [
+    { label: "营期", key: "营期" },
     { label: "获客", key: "获客" },
     { label: "班型", key: "班型" },
     { label: "添加产值", key: "添加产值" },
@@ -911,29 +942,52 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tab-content").forEach((s) => s.classList.toggle("active", s.id === tabName));
 }
 
-function computeFromRawRows(rawRows) {
+function computeFromRawRows(rawRows, analysisDateStr) {
   for (const col of REQUIRED_COLUMNS) {
-    if (!(col in rawRows[0])) throw new Error(`缺少字段：${col}`);
+    if (!(col in (rawRows[0] || {}))) throw new Error(`缺少字段：${col}`);
   }
+
+  const analysisDate = parseDate(analysisDateStr) || new Date();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
 
   const filteredRawRows = rawRows.filter((r) => {
     const project = String(r["项目"] ?? "").trim();
     const term = toNumber(r["营期"]);
+    if (term === null) return false;
+    
+    // 兼容 V2.0 逻辑：过滤掉英语项目的第 10 期
     if (project === "英语" && term === 10) return false;
+    
+    // 营期过滤逻辑：仅保留分析当日已结营的营期
+    const startDateRaw = r["开营时间"];
+    const startDate = parseDate(startDateRaw);
+    if (!startDate) {
+      console.warn(`无法解析日期: ${startDateRaw}, 营期: ${term}`);
+      return false;
+    }
+    const endDate = new Date(startDate.getTime() + sevenDaysMs);
+    if (endDate > analysisDate) return false;
+
     return true;
   });
 
-  if (filteredRawRows.length === 0) throw new Error("过滤后无有效数据，请检查导入文件是否正确。");
+  if (filteredRawRows.length === 0) {
+    const dates = Array.from(new Set(rawRows.map(r => r["开营时间"]).filter(Boolean))).slice(0, 3).join(", ");
+    throw new Error(`过滤后无有效数据。请检查“分析当日日期”设置。
+      (检测到的开营时间示例: ${dates || "无"}，当前分析日期: ${analysisDate.toLocaleDateString()})`);
+  }
 
   const normalized = filteredRawRows.map((r) => {
     const term = toNumber(r["营期"]);
     const leaderRaw = r["班级"];
     const leader = cleanLeaderName(leaderRaw);
     const group = String(r["小组"] ?? "").trim() || "暂无小组";
+    const bigGroup = String(r["大组"] ?? "").trim() || "未分组";
     const data = {
       营期: term,
       班长: leader,
       小组: group,
+      大组: bigGroup,
       获客: toNumber(r["获客"]) ?? 0,
       流水: toNumber(r["流水"]) ?? 0,
       添加人数: toNumber(r["添加人数"]) ?? 0,
@@ -950,13 +1004,12 @@ function computeFromRawRows(rawRows) {
       营期: base["营期"],
       班长: base["班长"],
       小组: modeOrFirst(items.map((x) => x["小组"]), "暂无小组"),
+      大组: modeOrFirst(items.map((x) => x["大组"]), "未分组"),
       获客: sum("获客"),
       流水: sum("流水"),
       添加人数: sum("添加人数"),
     });
   }
-
-  for (const r of aggregated) r["大组"] = GROUP_MAP.get(r["小组"]) ?? (r["小组"] === "暂无小组" ? "未分组" : "未分组");
 
   const marketByTerm = new Map();
   for (const [term, items] of groupBy(aggregated, (r) => r["营期"]).entries()) {
@@ -1027,6 +1080,11 @@ function initApp() {
   const summaryChips = qs("#summaryChips");
   const bandFilter = qs("#bandFilter");
   const clearData = qs("#clearData");
+  const analysisDateInput = qs("#analysisDate");
+
+  // 设置默认分析日期为今天
+  const today = new Date().toISOString().split("T")[0];
+  analysisDateInput.value = today;
 
   const overviewTable = qs("#overviewTable");
   const evidenceTable = qs("#evidenceTable");
@@ -1214,7 +1272,7 @@ function initApp() {
         if (!headers.includes(c)) throw new Error(`上传文件缺少字段：${c}`);
       }
       if (rows.length === 0) throw new Error("文件无数据行");
-      const { overview, evidence, pip } = computeFromRawRows(rows);
+      const { overview, evidence, pip } = computeFromRawRows(rows, analysisDateInput.value);
       currentOverview = overview;
       currentEvidence = evidence;
       currentPip = pip;

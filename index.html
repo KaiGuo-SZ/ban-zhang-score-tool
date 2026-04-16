@@ -3,19 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>班长排班得分工具 V2.0</title>
+    <title>班长排班得分工具 V2.1</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div class="app">
       <header class="header">
         <div class="title">
-          <h1>班长排班得分工具 V2.0</h1>
+          <h1>班长排班得分工具 V2.1</h1>
           <p class="subtitle">
             上传班级明细表 → 自动计算班长近3次带班（-1/-2/-3）两维度得分 → 输出排班建议带班数；并基于大盘产值判定 PIP/淘汰。
           </p>
         </div>
         <div class="actions">
+          <div class="analysis-date">
+            <label for="analysisDate">分析当日日期：</label>
+            <input id="analysisDate" type="date" />
+          </div>
           <label class="confirm">
             <input id="confirmClosed" type="checkbox" />
             <span>我确认导入的是已结营班级数据（必选）</span>
@@ -59,17 +63,18 @@
                 <ul class="list">
                   <li>仅导入已结营的班级数据；文件为 CSV（UTF-16，制表符分隔）</li>
                   <li>文件编码：UTF-16；分隔符：制表符（TSV风格）</li>
-                  <li>必须包含字段：营期、班级、小组、获客、流水、添加人数</li>
+                  <li>必须包含字段：营期、开营时间、班级、小组、大组、获客、流水、添加人数</li>
                   <li>数值字段允许千分位逗号；班级字段允许括号后缀（会自动清洗）</li>
                   <li>本工具在本地浏览器内计算，不会上传数据</li>
                 </ul>
               </div>
             </div>
             <div class="card">
-              <div class="card-title">当前口径</div>
+              <div class="card-title">当前口径 (V2.1)</div>
               <div class="card-body">
                 <ul class="list">
-                  <li>按【营期、班长(清洗后)】先汇总：获客/流水/添加人数求和；小组取众数</li>
+                  <li>按【营期、班长(清洗后)】先汇总：获客/流水/添加人数求和；小组/大组取众数</li>
+                  <li><b>营期过滤：</b>仅保留已结营的营期（开营时间 + 7天 <= 分析当日）</li>
                   <li>最新营期：按班长带过的营期集合倒序编号 -1/-2/-3（不要求连续）</li>
                   <li>若班长仅有2期数据，则 -3 期的【产值得分/班型得分】取 -1 与 -2 的平均得分；若仅1期数据则按实际期计算</li>
                   <li>添加产值 = 流水 / 添加人数；按营期做添加产值排名与百分位产值排名%</li>
