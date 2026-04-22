@@ -12,9 +12,6 @@
         <div class="header-top">
           <div class="title">
             <h1>班长排班得分工具 V2.2</h1>
-            <p class="subtitle">
-              上传班级明细表 → 自动计算班长近3次带班（-1/-2/-3）两维度得分 → 输出排班建议带班数；并基于大盘产值判定 PIP/淘汰。
-            </p>
           </div>
           <a
             class="help-link"
@@ -183,6 +180,12 @@
           <p>请勾选处于试用期的班长（按最新带班营期倒序排列，已去重）</p>
           <div class="modal-search-box">
             <input id="probationSearch" class="search" placeholder="搜索：班长姓名" />
+          </div>
+          <div class="modal-select-all">
+            <label>
+              <input type="checkbox" id="probationSelectAll" />
+              <span>全选当前列表</span>
+            </label>
           </div>
         </div>
         <div class="modal-body" id="probationList">

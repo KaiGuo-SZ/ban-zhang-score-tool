@@ -52,9 +52,14 @@ function debounce(fn, waitMs) {
   };
 }
 
-function cleanLeaderName(name) {
+function cleanLeaderName(name, projectType) {
   const s = String(name ?? "").trim();
   if (!s) return "";
+  if (projectType === "ziyang") {
+    // 梓洋项目：删除括号及连字符（-、_ 等）及其后的内容
+    return s.replace(/[（(\-_].*$/, "").trim();
+  }
+  // 其他项目：仅删除括号及其后的内容
   return s.replace(/[（(].*$/, "").trim();
 }
 
@@ -1089,7 +1094,7 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
   const normalized = filteredRawRows.map((r) => {
     const term = toNumber(r["营期"]);
     const leaderRaw = r["班级"];
-    const leader = cleanLeaderName(leaderRaw);
+    const leader = cleanLeaderName(leaderRaw, projectType);
     const group = String(r["小组"] ?? "").trim() || "暂无小组";
     const bigGroup = String(r["大组"] ?? "").trim() || "未分组";
     const data = {
@@ -1425,6 +1430,7 @@ function initApp() {
   const probationModal = qs("#probationModal");
   const probationList = qs("#probationList");
   const probationSearch = qs("#probationSearch");
+  const probationSelectAll = qs("#probationSelectAll");
   const probationCancel = qs("#probationCancel");
   const probationConfirm = qs("#probationConfirm");
 
@@ -1461,7 +1467,7 @@ function initApp() {
     // 提取去重的班长及其最新营期
     const leaderMap = new Map(); // name -> latest term
     for (const r of rawRows) {
-      const name = cleanLeaderName(r["班级"]);
+      const name = cleanLeaderName(r["班级"], currentProjectType);
       if (!name) continue;
       const term = toNumber(r["营期"]);
       if (term === null) continue;
@@ -1480,12 +1486,14 @@ function initApp() {
 
     probationSearch.value = "";
     
+    let currentFiltered = [];
+
     function renderProbationList() {
       const tokens = tokenizeQuery(probationSearch.value);
-      let filtered = leaderArray;
+      currentFiltered = leaderArray;
       
       if (tokens.length > 0) {
-        filtered = leaderArray.filter(l => {
+        currentFiltered = leaderArray.filter(l => {
           const hay = l.name.toLowerCase();
           for (const t of tokens) {
             if (hay.includes(t)) return true;
@@ -1496,15 +1504,20 @@ function initApp() {
 
       probationList.innerHTML = "";
       
-      if (filtered.length === 0) {
+      if (currentFiltered.length === 0) {
         const emptyState = document.createElement("div");
         emptyState.className = "probation-empty";
         emptyState.textContent = "未找到匹配的班长";
         probationList.appendChild(emptyState);
+        probationSelectAll.checked = false;
+        probationSelectAll.disabled = true;
         return;
       }
       
-      for (const l of filtered) {
+      probationSelectAll.disabled = false;
+      let allChecked = true;
+
+      for (const l of currentFiltered) {
         const item = document.createElement("label");
         item.className = "probation-item";
         
@@ -1514,6 +1527,8 @@ function initApp() {
         // Keep selection state when searching
         if (currentProbationSet.has(l.name)) {
           checkbox.checked = true;
+        } else {
+          allChecked = false;
         }
         
         checkbox.addEventListener("change", (e) => {
@@ -1522,6 +1537,9 @@ function initApp() {
           } else {
             currentProbationSet.delete(l.name);
           }
+          // Update select all checkbox state
+          const allCurrentlyChecked = currentFiltered.every(f => currentProbationSet.has(f.name));
+          probationSelectAll.checked = allCurrentlyChecked;
         });
         
         const nameSpan = document.createElement("span");
@@ -1538,7 +1556,21 @@ function initApp() {
         
         probationList.appendChild(item);
       }
+
+      probationSelectAll.checked = allChecked;
     }
+
+    probationSelectAll.onchange = (e) => {
+      const isChecked = e.target.checked;
+      for (const l of currentFiltered) {
+        if (isChecked) {
+          currentProbationSet.add(l.name);
+        } else {
+          currentProbationSet.delete(l.name);
+        }
+      }
+      renderProbationList();
+    };
 
     const onSearch = debounce(() => {
       renderProbationList();
