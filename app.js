@@ -1,6 +1,6 @@
 const REQUIRED_COLUMNS = ["项目", "营期", "开营时间", "班级", "小组", "大组", "获客", "流水", "添加人数"];
 const PERIODS = [-1, -2, -3];
-const PIP_PERIODS = [-1, -2, -3, -4, -5, -6, -7, -8];
+const PIP_PERIODS = [-1, -2, -3, -4];
 
 function qs(sel) {
   const el = document.querySelector(sel);
@@ -52,14 +52,9 @@ function debounce(fn, waitMs) {
   };
 }
 
-function cleanLeaderName(name, projectType) {
+function cleanLeaderName(name) {
   const s = String(name ?? "").trim();
   if (!s) return "";
-  if (projectType === "ziyang") {
-    // 梓洋项目：删除括号及连字符（-、_ 等）及其后的内容
-    return s.replace(/[（(\-_].*$/, "").trim();
-  }
-  // 其他项目：仅删除括号及其后的内容
   return s.replace(/[（(].*$/, "").trim();
 }
 
@@ -240,7 +235,7 @@ function assignRankAndScore(rows) {
   return enriched;
 }
 
-function buildWideTable(rows, projectType, probationSet) {
+function buildWideTable(rows) {
   const byLeader = groupBy(rows.filter((r) => PIP_PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
   const leaders = [];
 
@@ -250,10 +245,6 @@ function buildWideTable(rows, projectType, probationSet) {
       大组: "",
       小组: "",
     };
-    
-    if (projectType === "ziyang") {
-      row["试用期"] = probationSet.has(leader) ? "是" : "";
-    }
 
     const pNeg1 = items.find((x) => x["最新营期"] === -1);
     row["小组"] = String(pNeg1?.["小组"] ?? "暂无小组");
@@ -272,11 +263,11 @@ function buildWideTable(rows, projectType, probationSet) {
       row[`营期_${p}`] = it?.["营期"] ?? null;
       row[`获客_${p}`] = leads;
       row[`班型_${p}`] = classType;
+      row[`班型得分_${p}`] = classScore;
       row[`添加产值_${p}`] = addValue === null ? null : round2(Number(addValue));
       row[`产值排名_${p}`] = rank;
       row[`产值排名%_${p}`] = rankPct === null ? null : round2(Number(rankPct));
-      row[`产值_${p}`] = valueScore;
-      row[`班型_${p}`] = classScore;
+      row[`产值得分_${p}`] = valueScore;
     }
 
     const belowByPeriod = new Map();
@@ -285,50 +276,30 @@ function buildWideTable(rows, projectType, probationSet) {
       const below = it?.["低于大盘"];
       belowByPeriod.set(p, below === true);
     }
-    
-    let pip = false;
-    let eliminated = false;
-
-    if (projectType === "ziyang") {
-      const isProbation = probationSet.has(leader);
-      if (isProbation) {
-        // 试用期员工：近5个营期，2期产值低大盘则标记PIP，3期产值低大盘则标记淘汰；
-        const belowCount5 = [-1, -2, -3, -4, -5].map(p => belowByPeriod.get(p)).filter(Boolean).length;
-        if (belowCount5 >= 3) eliminated = true;
-        else if (belowCount5 >= 2) pip = true;
-      } else {
-        // 转正员工：近8个营期，3期产值低大盘则标记PIP，5期产值低大盘则标记淘汰；
-        const belowCount8 = PIP_PERIODS.map(p => belowByPeriod.get(p)).filter(Boolean).length;
-        if (belowCount8 >= 5) eliminated = true;
-        else if (belowCount8 >= 3) pip = true;
-      }
-    } else {
-      const b1 = belowByPeriod.get(-1) === true;
-      const b2 = belowByPeriod.get(-2) === true;
-      const b3 = belowByPeriod.get(-3) === true;
-      const b4 = belowByPeriod.get(-4) === true;
-      const count3 = [b1, b2, b3].filter(Boolean).length;
-      const count4 = [b1, b2, b3, b4].filter(Boolean).length;
-      pip = (b1 && b2) || count3 >= 2;
-      eliminated = b1 && count4 >= 3;
-    }
-
+    const b1 = belowByPeriod.get(-1) === true;
+    const b2 = belowByPeriod.get(-2) === true;
+    const b3 = belowByPeriod.get(-3) === true;
+    const b4 = belowByPeriod.get(-4) === true;
+    const count3 = [b1, b2, b3].filter(Boolean).length;
+    const count4 = [b1, b2, b3, b4].filter(Boolean).length;
+    const pip = (b1 && b2) || count3 >= 2;
+    const eliminated = b1 && count4 >= 3;
     row["PIP"] = pip ? "PIP" : "";
     row["淘汰"] = eliminated ? "淘汰" : "";
 
     const availablePeriods = new Set(items.map((x) => x["最新营期"]).filter((x) => x !== null));
     if (availablePeriods.size === 2 && availablePeriods.has(-1) && availablePeriods.has(-2) && !availablePeriods.has(-3)) {
-      const a1 = Number(row["产值_-1"] ?? 0) || 0;
-      const a2 = Number(row["产值_-2"] ?? 0) || 0;
-      const b1 = Number(row["班型_-1"] ?? 0) || 0;
-      const b2 = Number(row["班型_-2"] ?? 0) || 0;
-      row["产值_-3"] = round2((a1 + a2) / 2);
-      row["班型_-3"] = round2((b1 + b2) / 2);
+      const a1 = Number(row["产值得分_-1"] ?? 0) || 0;
+      const a2 = Number(row["产值得分_-2"] ?? 0) || 0;
+      const b1 = Number(row["班型得分_-1"] ?? 0) || 0;
+      const b2 = Number(row["班型得分_-2"] ?? 0) || 0;
+      row["产值得分_-3"] = round2((a1 + a2) / 2);
+      row["班型得分_-3"] = round2((b1 + b2) / 2);
     }
 
     let total = 0;
     for (const p of PERIODS) {
-      total += (Number(row[`班型_${p}`] ?? 0) || 0) + (Number(row[`产值_${p}`] ?? 0) || 0);
+      total += (Number(row[`班型得分_${p}`] ?? 0) || 0) + (Number(row[`产值得分_${p}`] ?? 0) || 0);
     }
     row["班长总分"] = total;
     row["带班数"] = total < 120 ? 1 : total < 150 ? 2 : total < 180 ? 3 : 4;
@@ -350,7 +321,7 @@ function buildWideTable(rows, projectType, probationSet) {
   return leaders;
 }
 
-function buildPipTable(rows, projectType, probationSet) {
+function buildPipTable(rows) {
   const byLeader = groupBy(rows.filter((r) => PIP_PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
   const leaders = [];
 
@@ -361,10 +332,6 @@ function buildPipTable(rows, projectType, probationSet) {
       大组: String(pNeg1?.["大组"] ?? "未分组"),
       小组: String(pNeg1?.["小组"] ?? "暂无小组"),
     };
-    
-    if (projectType === "ziyang") {
-      row["试用期"] = probationSet.has(leader) ? "是" : "";
-    }
 
     const belowFlags = [];
     for (const p of PIP_PERIODS) {
@@ -379,32 +346,13 @@ function buildPipTable(rows, projectType, probationSet) {
       row[`低于大盘_${p}`] = yesNo(below);
       belowFlags.push(below === true);
     }
-    
-    let pip = false;
-    let eliminated = false;
 
-    if (projectType === "ziyang") {
-      const isProbation = probationSet.has(leader);
-      if (isProbation) {
-        // 试用期员工：近5个营期，2期产值低大盘则标记PIP，3期产值低大盘则标记淘汰；
-        const belowCount5 = belowFlags.slice(0, 5).filter(Boolean).length;
-        if (belowCount5 >= 3) eliminated = true;
-        else if (belowCount5 >= 2) pip = true;
-      } else {
-        // 转正员工：近8个营期，3期产值低大盘则标记PIP，5期产值低大盘则标记淘汰；
-        const belowCount8 = belowFlags.filter(Boolean).length;
-        if (belowCount8 >= 5) eliminated = true;
-        else if (belowCount8 >= 3) pip = true;
-      }
-    } else {
-      const b1 = belowFlags[0] === true;
-      const b2 = belowFlags[1] === true;
-      const b3 = belowFlags[2] === true;
-      const count3 = [b1, b2, b3].filter(Boolean).length;
-      pip = (b1 && b2) || count3 >= 2;
-      eliminated = b1 && belowFlags.slice(0, 4).filter(Boolean).length >= 3;
-    }
-
+    const b1 = belowFlags[0] === true;
+    const b2 = belowFlags[1] === true;
+    const b3 = belowFlags[2] === true;
+    const count3 = [b1, b2, b3].filter(Boolean).length;
+    const pip = (b1 && b2) || count3 >= 2;
+    const eliminated = b1 && belowFlags.filter(Boolean).length >= 3;
     row["PIP"] = pip ? "PIP" : "";
     row["淘汰"] = eliminated ? "淘汰" : "";
     leaders.push(row);
@@ -549,16 +497,7 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl, sear
       for (const c of columns) {
         const td = document.createElement("td");
         const v = r[c];
-        
-        if (c === "试用期" && String(v ?? "") === "是") {
-          const span = document.createElement("span");
-          span.className = "badge probation";
-          span.textContent = "试用期";
-          td.appendChild(span);
-        } else {
-          td.textContent = cellText(c, v);
-        }
-        
+        td.textContent = cellText(c, v);
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
@@ -579,20 +518,19 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl, sear
   apply(rows);
 }
 
-function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, projectType }) {
+function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
   const columns = [
     "大组",
     "小组",
     "班长",
-    "产值_-1",
-    "产值_-2",
-    "产值_-3",
-    "班型_-1",
-    "班型_-2",
-    "班型_-3",
+    "产值得分_-1",
+    "产值得分_-2",
+    "产值得分_-3",
+    "班型得分_-1",
+    "班型得分_-2",
+    "班型得分_-3",
     "班长总分",
     "带班数",
-    ...(projectType === "ziyang" ? ["试用期"] : []),
     "PIP",
     "淘汰",
   ];
@@ -708,11 +646,6 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
           span.className = `badge b${Number.isFinite(n) ? n : 0}`.trim();
           span.textContent = valueTextByKey(c, v);
           td.appendChild(span);
-        } else if (c === "试用期" && String(v ?? "") === "是") {
-          const span = document.createElement("span");
-          span.className = "badge probation";
-          span.textContent = "试用期";
-          td.appendChild(span);
         } else if (c === "PIP" && String(v ?? "") === "PIP") {
           const span = document.createElement("span");
           span.className = "badge pip";
@@ -755,46 +688,34 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
         const box = document.createElement("div");
         box.className = "detail-box";
 
-        const cardsContainer = document.createElement("div");
-        cardsContainer.className = "period-cards";
+        const sub = document.createElement("table");
+        sub.className = "subtable";
+        const subHead = document.createElement("thead");
+        const subHeadTr = document.createElement("tr");
+        ["指标", "-1", "-2", "-3"].forEach((h) => {
+          const th = document.createElement("th");
+          th.textContent = h;
+          subHeadTr.appendChild(th);
+        });
+        subHead.appendChild(subHeadTr);
+        sub.appendChild(subHead);
 
-        for (const p of PERIODS) {
-          const card = document.createElement("div");
-          card.className = "period-card";
-          
-          const header = document.createElement("div");
-          header.className = "period-card-header";
-          
-          const termVal = valueTextByKey("营期", r[`营期_${p}`]);
-          header.innerHTML = `<span class="period-badge">近${Math.abs(p)}期</span><span class="period-term">${termVal ? `营期 ${termVal}` : "暂无营期"}</span>`;
-          card.appendChild(header);
-
-          const body = document.createElement("div");
-          body.className = "period-card-body";
-
-          for (const item of detailRows) {
-            if (item.key === "营期") continue;
-            const rowDiv = document.createElement("div");
-            rowDiv.className = "period-stat";
-            
-            const lbl = document.createElement("span");
-            lbl.className = "stat-label";
-            lbl.textContent = item.label;
-
-            const val = document.createElement("span");
-            val.className = "stat-value";
-            const valText = valueTextByKey(item.key, r[`${item.key}_${p}`]);
-            val.textContent = valText || "-";
-
-            rowDiv.appendChild(lbl);
-            rowDiv.appendChild(val);
-            body.appendChild(rowDiv);
+        const subBody = document.createElement("tbody");
+        for (const item of detailRows) {
+          const subTr = document.createElement("tr");
+          const tdLabel = document.createElement("td");
+          tdLabel.textContent = item.label;
+          subTr.appendChild(tdLabel);
+          for (const p of PERIODS) {
+            const tdV = document.createElement("td");
+            tdV.textContent = valueTextByKey(item.key, r[`${item.key}_${p}`]);
+            subTr.appendChild(tdV);
           }
-          card.appendChild(body);
-          cardsContainer.appendChild(card);
+          subBody.appendChild(subTr);
         }
+        sub.appendChild(subBody);
 
-        box.appendChild(cardsContainer);
+        box.appendChild(sub);
         td.appendChild(box);
         trDetail.appendChild(td);
         tbody.appendChild(trDetail);
@@ -816,17 +737,8 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
   apply(rows);
 }
 
-function renderPipTable(tableEl, rows, { searchInput, metaEl, hintEl, projectType }) {
-  const dynamicBelowCols = PIP_PERIODS.map(p => `低于大盘_${p}`);
-  const columns = [
-    "大组", 
-    "小组", 
-    ...(projectType === "ziyang" ? ["试用期"] : []),
-    "班长", 
-    "PIP", 
-    "淘汰", 
-    ...(projectType === "ziyang" ? dynamicBelowCols : ["低于大盘_-1", "低于大盘_-2", "低于大盘_-3", "低于大盘_-4"])
-  ];
+function renderPipTable(tableEl, rows, { searchInput, metaEl, hintEl }) {
+  const columns = ["大组", "小组", "班长", "PIP", "淘汰", "低于大盘_-1", "低于大盘_-2", "低于大盘_-3", "低于大盘_-4"];
   const detailRows = [
     { label: "营期", key: "营期" },
     { label: "添加产值", key: "添加产值" },
@@ -934,11 +846,6 @@ function renderPipTable(tableEl, rows, { searchInput, metaEl, hintEl, projectTyp
           span.className = "badge pip";
           span.textContent = "PIP";
           td.appendChild(span);
-        } else if (c === "试用期" && String(v ?? "") === "是") {
-          const span = document.createElement("span");
-          span.className = "badge probation";
-          span.textContent = "试用期";
-          td.appendChild(span);
         } else if (c === "淘汰" && String(v ?? "") === "淘汰") {
           const span = document.createElement("span");
           span.className = "badge elim";
@@ -981,55 +888,34 @@ function renderPipTable(tableEl, rows, { searchInput, metaEl, hintEl, projectTyp
         const box = document.createElement("div");
         box.className = "detail-box";
 
-        const cardsContainer = document.createElement("div");
-        cardsContainer.className = "period-cards";
-        const pList = projectType === "ziyang" ? PIP_PERIODS : [-1, -2, -3, -4];
+        const sub = document.createElement("table");
+        sub.className = "subtable";
+        const subHead = document.createElement("thead");
+        const subHeadTr = document.createElement("tr");
+        ["指标", "-1", "-2", "-3", "-4"].forEach((h) => {
+          const th = document.createElement("th");
+          th.textContent = h;
+          subHeadTr.appendChild(th);
+        });
+        subHead.appendChild(subHeadTr);
+        sub.appendChild(subHead);
 
-        for (const p of pList) {
-          const card = document.createElement("div");
-          card.className = "period-card";
-          
-          const header = document.createElement("div");
-          header.className = "period-card-header";
-          
-          const termVal = valueText(r[`营期_${p}`]);
-          header.innerHTML = `<span class="period-badge">近${Math.abs(p)}期</span><span class="period-term">${termVal ? `营期 ${termVal}` : "暂无营期"}</span>`;
-          card.appendChild(header);
-
-          const body = document.createElement("div");
-          body.className = "period-card-body";
-
-          for (const item of detailRows) {
-            if (item.key === "营期") continue;
-            const rowDiv = document.createElement("div");
-            rowDiv.className = "period-stat";
-            
-            const lbl = document.createElement("span");
-            lbl.className = "stat-label";
-            lbl.textContent = item.label;
-
-            const val = document.createElement("span");
-            val.className = "stat-value";
-            const valText = valueText(r[`${item.key}_${p}`]);
-            val.textContent = valText || "-";
-
-            if (item.key === "低于大盘" && valText === "是") {
-              val.style.color = "var(--danger-text)";
-              val.style.fontWeight = "600";
-            } else if (item.key === "低于大盘" && valText === "否") {
-              val.style.color = "var(--success-text)";
-              val.style.fontWeight = "600";
-            }
-
-            rowDiv.appendChild(lbl);
-            rowDiv.appendChild(val);
-            body.appendChild(rowDiv);
+        const subBody = document.createElement("tbody");
+        for (const item of detailRows) {
+          const subTr = document.createElement("tr");
+          const tdLabel = document.createElement("td");
+          tdLabel.textContent = item.label;
+          subTr.appendChild(tdLabel);
+          for (const p of PIP_PERIODS) {
+            const tdV = document.createElement("td");
+            tdV.textContent = valueText(r[`${item.key}_${p}`]);
+            subTr.appendChild(tdV);
           }
-          card.appendChild(body);
-          cardsContainer.appendChild(card);
+          subBody.appendChild(subTr);
         }
+        sub.appendChild(subBody);
 
-        box.appendChild(cardsContainer);
+        box.appendChild(sub);
         td.appendChild(box);
         trDetail.appendChild(td);
         tbody.appendChild(trDetail);
@@ -1056,7 +942,7 @@ function setActiveTab(tabName) {
   document.querySelectorAll(".tab-content").forEach((s) => s.classList.toggle("active", s.id === tabName));
 }
 
-function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet) {
+function computeFromRawRows(rawRows, analysisDateStr) {
   for (const col of REQUIRED_COLUMNS) {
     if (!(col in (rawRows[0] || {}))) throw new Error(`缺少字段：${col}`);
   }
@@ -1094,7 +980,7 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
   const normalized = filteredRawRows.map((r) => {
     const term = toNumber(r["营期"]);
     const leaderRaw = r["班级"];
-    const leader = cleanLeaderName(leaderRaw, projectType);
+    const leader = cleanLeaderName(leaderRaw);
     const group = String(r["小组"] ?? "").trim() || "暂无小组";
     const bigGroup = String(r["大组"] ?? "").trim() || "未分组";
     const data = {
@@ -1152,7 +1038,6 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
       班长: r["班长"],
       大组: r["大组"],
       小组: r["小组"],
-      ...(projectType === "ziyang" ? { 试用期: probationSet.has(r["班长"]) ? "是" : "" } : {}),
       获客: r["获客"],
       流水: r["流水"],
       添加人数: r["添加人数"],
@@ -1172,8 +1057,8 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
       return String(a["班长"]).localeCompare(String(b["班长"]), "zh");
     });
 
-  const overview = buildWideTable(withRank, projectType, probationSet);
-  const pip = buildPipTable(withRank, projectType, probationSet);
+  const overview = buildWideTable(withRank);
+  const pip = buildPipTable(withRank);
 
   return { overview, evidence, pip };
 }
@@ -1190,19 +1075,12 @@ function initApp() {
   const fileInput = qs("#fileInput");
   const dropzone = qs("#dropzone");
   const fileMeta = qs("#fileMeta");
+  const confirmClosed = qs("#confirmClosed");
   const statusPill = qs("#statusPill");
   const summaryChips = qs("#summaryChips");
   const bandFilter = qs("#bandFilter");
   const clearData = qs("#clearData");
   const analysisDateInput = qs("#analysisDate");
-
-  // 项目类型选择
-  document.querySelectorAll('input[name="projectType"]').forEach((radio) => {
-    radio.addEventListener("change", (e) => {
-      currentProjectType = e.target.value;
-      loadFromCache();
-    });
-  });
 
   // 设置默认分析日期为今天
   const today = new Date().toISOString().split("T")[0];
@@ -1232,33 +1110,10 @@ function initApp() {
   let currentEvidence = [];
   let currentPip = [];
   let activeBand = null;
-  let uploadEnabled = true; // Always enabled now
-  let currentProjectType = "other";
-  
-  // 增加多项目数据记忆
-  const projectCache = {
-    other: {
-      overview: [],
-      evidence: [],
-      pip: [],
-      probationSet: new Set(),
-      fileName: null,
-      rawRows: null
-    },
-    ziyang: {
-      overview: [],
-      evidence: [],
-      pip: [],
-      probationSet: new Set(),
-      fileName: null,
-      rawRows: null
-    }
-  };
-
-  let currentProbationSet = projectCache[currentProjectType].probationSet;
+  let uploadEnabled = false;
 
   function setStatus(kind, text) {
-    statusPill.className = `pill ${kind || "default"}`.trim();
+    statusPill.className = `pill ${kind ?? ""}`.trim();
     statusPill.textContent = text;
   }
 
@@ -1285,15 +1140,13 @@ function initApp() {
       searchInput: overviewSearch,
       metaEl: overviewMeta,
       hintEl: overviewHint,
-      projectType: currentProjectType,
     });
 
     const evidenceColumns = [
       "营期",
+      "班长",
       "大组",
       "小组",
-      ...(currentProjectType === "ziyang" ? ["试用期"] : []),
-      "班长",
       "获客",
       "流水",
       "添加人数",
@@ -1319,7 +1172,6 @@ function initApp() {
       searchInput: pipSearch,
       metaEl: pipMeta,
       hintEl: pipHint,
-      projectType: currentProjectType,
     });
   }
 
@@ -1363,7 +1215,6 @@ function initApp() {
     currentEvidence = [];
     currentPip = [];
     activeBand = null;
-    currentProbationSet = projectCache[currentProjectType].probationSet;
     overviewSearch.value = "";
     evidenceSearch.value = "";
     pipSearch.value = "";
@@ -1375,64 +1226,36 @@ function initApp() {
     pipMeta.textContent = "";
     summaryChips.innerHTML = "";
     bandFilter.innerHTML = "";
-    fileMeta.textContent = "未上传";
-    setUploadEnabled(true);
-    setStatus("", "等待上传");
+    fileMeta.textContent = "未上传（请先勾选确认）";
+    confirmClosed.checked = false;
+    setUploadEnabled(false);
+    setStatus("warn", "请先确认已结营");
     setDownloadsEnabled(false);
-    overviewHint.textContent = "上传后将展示：组-班长 + 三期两维度得分 + 总分与带班数；其余过程数据可查看下方明细佐证。";
+    overviewHint.textContent = "上传后将展示：组-班长 + 三期两维度得分 + 总分与带班数；其余过程数据可点击“展开”或切换到“过程数据”。";
     evidenceHint.textContent = "";
-    pipHint.textContent = "用于判断：是否低于当期大盘产值、是否触发 PIP/淘汰；默认展示相关过程数据。";
-  }
-
-  function loadFromCache() {
-    const cache = projectCache[currentProjectType];
-    currentOverview = cache.overview || [];
-    currentEvidence = cache.evidence || [];
-    currentPip = cache.pip || [];
-    currentProbationSet = cache.probationSet;
-    activeBand = null;
-
-    if (currentOverview.length > 0) {
-      fileMeta.textContent = cache.fileName || "已恢复缓存数据";
-      renderBandFilter();
-      renderAll();
-      setDownloadsEnabled(true);
-      setStatus("ok", "已恢复");
-      overviewHint.textContent = "已恢复该项目上次计算的数据。";
-      evidenceHint.textContent = "可通过搜索框按营期/班长快速定位并导出。";
-      pipHint.textContent = "可通过搜索框按班长/组别定位；导出用于策略运营做 PIP/淘汰辅助决策。";
-    } else {
-      resetUI();
-    }
+    pipHint.textContent = "用于判断：是否低于当期大盘产值、是否触发 PIP/淘汰；默认展示近4期过程数据。";
   }
 
   downloadResult.addEventListener("click", () => {
     const rows = Array.isArray(overviewTable.__filteredRows) ? overviewTable.__filteredRows : currentOverview;
     if (!rows.length) return;
     const columns = Object.keys(rows[0]);
-    downloadText("升班数据.csv", toCSV(rows, columns));
+    downloadText("班长排班得分-结果.csv", toCSV(rows, columns));
   });
 
   downloadEvidence.addEventListener("click", () => {
     const rows = Array.isArray(evidenceTable.__filteredRows) ? evidenceTable.__filteredRows : currentEvidence;
     if (!rows.length) return;
     const columns = Object.keys(rows[0]);
-    downloadText("过程数据.csv", toCSV(rows, columns));
+    downloadText("班长排班得分-过程数据.csv", toCSV(rows, columns));
   });
 
   downloadPip.addEventListener("click", () => {
     const rows = Array.isArray(pipTable.__filteredRows) ? pipTable.__filteredRows : currentPip;
     if (!rows.length) return;
     const columns = Object.keys(rows[0]);
-    downloadText("PIP淘汰.csv", toCSV(rows, columns));
+    downloadText("班长排班得分-PIP淘汰.csv", toCSV(rows, columns));
   });
-
-  const probationModal = qs("#probationModal");
-  const probationList = qs("#probationList");
-  const probationSearch = qs("#probationSearch");
-  const probationSelectAll = qs("#probationSelectAll");
-  const probationCancel = qs("#probationCancel");
-  const probationConfirm = qs("#probationConfirm");
 
   async function handleFile(file) {
     if (!uploadEnabled) return;
@@ -1449,201 +1272,54 @@ function initApp() {
         if (!headers.includes(c)) throw new Error(`上传文件缺少字段：${c}`);
       }
       if (rows.length === 0) throw new Error("文件无数据行");
-
-      if (currentProjectType === "ziyang") {
-        // 展示批量标记试用期 Modal
-        showProbationModal(rows, file);
-      } else {
-        processAndRender(rows);
-      }
+      const { overview, evidence, pip } = computeFromRawRows(rows, analysisDateInput.value);
+      currentOverview = overview;
+      currentEvidence = evidence;
+      currentPip = pip;
+      activeBand = null;
+      renderBandFilter();
+      renderAll();
+      setDownloadsEnabled(true);
+      setStatus("ok", "已完成");
+      overviewHint.textContent = "已完成计算。总览默认按带班数与总分从高到低排序；点击“展开”可查看班型/产值等佐证数据。";
+      evidenceHint.textContent = "可通过搜索框按营期/班长快速定位并导出。";
+      pipHint.textContent = "可通过搜索框按班长/组别定位；导出用于策略运营做 PIP/淘汰辅助决策。";
+      setActiveTab("overview");
     } catch (err) {
-      handleError(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus("bad", "计算失败");
+      overviewHint.textContent = `计算失败：${msg}`;
+      evidenceHint.textContent = "";
+      currentOverview = [];
+      currentEvidence = [];
+      currentPip = [];
+      summaryChips.innerHTML = "";
+      bandFilter.innerHTML = "";
+      overviewTable.innerHTML = "";
+      evidenceTable.innerHTML = "";
+      pipTable.innerHTML = "";
+      overviewMeta.textContent = "";
+      evidenceMeta.textContent = "";
+      pipMeta.textContent = "";
+      setDownloadsEnabled(false);
     } finally {
       fileInput.value = "";
     }
   }
 
-  function showProbationModal(rawRows, file) {
-    // 提取去重的班长及其最新营期
-    const leaderMap = new Map(); // name -> latest term
-    for (const r of rawRows) {
-      const name = cleanLeaderName(r["班级"], currentProjectType);
-      if (!name) continue;
-      const term = toNumber(r["营期"]);
-      if (term === null) continue;
-      const existing = leaderMap.get(name);
-      if (existing === undefined || term > existing) {
-        leaderMap.set(name, term);
-      }
-    }
-
-    const leaderArray = Array.from(leaderMap.entries()).map(([name, term]) => ({ name, term }));
-    // 按营期倒序，同营期按姓名排序
-    leaderArray.sort((a, b) => {
-      if (b.term !== a.term) return b.term - a.term;
-      return a.name.localeCompare(b.name, "zh");
-    });
-
-    probationSearch.value = "";
-    
-    let currentFiltered = [];
-
-    function renderProbationList() {
-      const tokens = tokenizeQuery(probationSearch.value);
-      currentFiltered = leaderArray;
-      
-      if (tokens.length > 0) {
-        currentFiltered = leaderArray.filter(l => {
-          const hay = l.name.toLowerCase();
-          for (const t of tokens) {
-            if (hay.includes(t)) return true;
-          }
-          return false;
-        });
-      }
-
-      probationList.innerHTML = "";
-      
-      if (currentFiltered.length === 0) {
-        const emptyState = document.createElement("div");
-        emptyState.className = "probation-empty";
-        emptyState.textContent = "未找到匹配的班长";
-        probationList.appendChild(emptyState);
-        probationSelectAll.checked = false;
-        probationSelectAll.disabled = true;
-        return;
-      }
-      
-      probationSelectAll.disabled = false;
-      let allChecked = true;
-
-      for (const l of currentFiltered) {
-        const item = document.createElement("label");
-        item.className = "probation-item";
-        
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.value = l.name;
-        // Keep selection state when searching
-        if (currentProbationSet.has(l.name)) {
-          checkbox.checked = true;
-        } else {
-          allChecked = false;
-        }
-        
-        checkbox.addEventListener("change", (e) => {
-          if (e.target.checked) {
-            currentProbationSet.add(l.name);
-          } else {
-            currentProbationSet.delete(l.name);
-          }
-          // Update select all checkbox state
-          const allCurrentlyChecked = currentFiltered.every(f => currentProbationSet.has(f.name));
-          probationSelectAll.checked = allCurrentlyChecked;
-        });
-        
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "leader-name";
-        nameSpan.textContent = l.name;
-        
-        const termSpan = document.createElement("span");
-        termSpan.className = "term-tag";
-        termSpan.textContent = `最新营期: ${l.term}`;
-
-        item.appendChild(checkbox);
-        item.appendChild(nameSpan);
-        item.appendChild(termSpan);
-        
-        probationList.appendChild(item);
-      }
-
-      probationSelectAll.checked = allChecked;
-    }
-
-    probationSelectAll.onchange = (e) => {
-      const isChecked = e.target.checked;
-      for (const l of currentFiltered) {
-        if (isChecked) {
-          currentProbationSet.add(l.name);
-        } else {
-          currentProbationSet.delete(l.name);
-        }
-      }
-      renderProbationList();
-    };
-
-    const onSearch = debounce(() => {
-      renderProbationList();
-    }, 150);
-
-    probationSearch.addEventListener("input", onSearch);
-    
-    renderProbationList();
-
-    probationModal.classList.add("active");
-
-    probationCancel.onclick = () => {
-      probationSearch.removeEventListener("input", onSearch);
-      probationModal.classList.remove("active");
-      handleError(new Error("已取消操作"));
-    };
-
-    probationConfirm.onclick = () => {
-      probationSearch.removeEventListener("input", onSearch);
-      probationModal.classList.remove("active");
-      processAndRender(rawRows);
-    };
-  }
-
-  function processAndRender(rows) {
-    try {
-      const { overview, evidence, pip } = computeFromRawRows(rows, analysisDateInput.value, currentProjectType, currentProbationSet);
-      currentOverview = overview;
-      currentEvidence = evidence;
-      currentPip = pip;
-      activeBand = null;
-
-      // 保存到当前项目缓存中
-      const cache = projectCache[currentProjectType];
-      cache.overview = overview;
-      cache.evidence = evidence;
-      cache.pip = pip;
-      cache.fileName = fileMeta.textContent;
-      cache.rawRows = rows;
-
-      renderBandFilter();
-      renderAll();
-      setDownloadsEnabled(true);
-      setStatus("ok", "已完成");
-      overviewHint.textContent = "已完成计算。默认按带班数与总分从高到低排序；点击“展开”可查看班型/产值等数据。";
-      evidenceHint.textContent = "可通过搜索框按营期/班长快速定位并导出。";
-      pipHint.textContent = "可通过搜索框按班长/组别定位；导出用于策略运营做 PIP/淘汰辅助决策。";
-      setActiveTab("overview");
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  function handleError(err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus("bad", "计算失败");
-    overviewHint.textContent = `计算失败：${msg}`;
-    evidenceHint.textContent = "";
-    currentOverview = [];
-    currentEvidence = [];
-    currentPip = [];
-    summaryChips.innerHTML = "";
-    bandFilter.innerHTML = "";
-    overviewTable.innerHTML = "";
-    evidenceTable.innerHTML = "";
-    pipTable.innerHTML = "";
-    overviewMeta.textContent = "";
-    evidenceMeta.textContent = "";
-    pipMeta.textContent = "";
-    setDownloadsEnabled(false);
-  }
-
   clearData.addEventListener("click", () => resetUI());
+
+  confirmClosed.addEventListener("change", () => {
+    if (confirmClosed.checked) {
+      setUploadEnabled(true);
+      fileMeta.textContent = "未上传";
+      setStatus("", "等待上传");
+    } else {
+      setUploadEnabled(false);
+      fileMeta.textContent = "未上传（请先勾选确认）";
+      setStatus("warn", "请先确认已结营");
+    }
+  });
 
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
