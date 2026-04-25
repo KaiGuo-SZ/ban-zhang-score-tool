@@ -277,6 +277,8 @@ function buildWideTable(rows, projectType, probationSet) {
       row[`添加产值_${p}`] = addValue === null ? null : round2(Number(addValue));
       row[`大盘产值_${p}`] = market === null ? null : round2(Number(market));
       row[`低于大盘_${p}`] = yesNo(below);
+      row[`大盘差值_${p}`] =
+        addValue === null || market === null ? null : round2(Number(addValue) - Number(market));
       row[`产值排名_${p}`] = rank;
       row[`产值排名%_${p}`] = rankPct === null ? null : round2(Number(rankPct));
       row[`产值_${p}`] = valueScore;
@@ -607,6 +609,7 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
     { label: "添加产值", key: "添加产值" },
     { label: "大盘产值", key: "大盘产值" },
     { label: "低于大盘", key: "低于大盘" },
+    { label: "与大盘差值", key: "大盘差值" },
     { label: "产值排名", key: "产值排名" },
     { label: "产值排名百分位", key: "产值排名%" },
   ];
@@ -644,6 +647,14 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
       const n = toNumber(base);
       if (n === null) return "";
       return `${round2(n).toFixed(2)}%`;
+    }
+    if (key === "大盘差值") {
+      const n = typeof v === "number" && Number.isFinite(v) ? v : toNumber(v);
+      if (n === null) return "";
+      const out = round2(n);
+      if (out === null) return "";
+      const sign = out > 0 ? "+" : "";
+      return `${sign}${out.toFixed(2)}`;
     }
     return valueText(v);
   }
@@ -798,6 +809,20 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
             } else if (item.key === "低于大盘" && valText === "否") {
               val.style.color = "var(--success-text)";
               val.style.fontWeight = "600";
+            } else if (item.key === "大盘差值") {
+              const raw = r[`${item.key}_${p}`];
+              const n = typeof raw === "number" && Number.isFinite(raw) ? raw : toNumber(raw);
+              if (n !== null) {
+                if (n > 0) {
+                  val.style.color = "var(--success-text)";
+                  val.style.fontWeight = "600";
+                } else if (n < 0) {
+                  val.style.color = "var(--danger-text)";
+                  val.style.fontWeight = "600";
+                } else {
+                  val.style.color = "var(--text-muted)";
+                }
+              }
             }
 
             rowDiv.appendChild(lbl);
