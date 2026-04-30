@@ -1,6 +1,7 @@
 const REQUIRED_COLUMNS = ["项目", "营期", "开营时间", "班级", "小组", "大组", "获客", "流水", "添加人数"];
 const PERIODS = [-1, -2, -3];
 const PIP_PERIODS = [-1, -2, -3, -4, -5, -6, -7, -8];
+const CLASS_SCORE_OPTIONS = [0, 10, 20, 30, 40, 50];
 
 function qs(sel) {
   const el = document.querySelector(sel);
@@ -356,6 +357,15 @@ function buildWideTable(rows, projectType, probationSet) {
   return leaders;
 }
 
+function recalcLeaderSummary(row) {
+  let total = 0;
+  for (const p of PERIODS) {
+    total += (Number(row[`班型_${p}`] ?? 0) || 0) + (Number(row[`产值_${p}`] ?? 0) || 0);
+  }
+  row["班长总分"] = total;
+  row["带班数"] = total < 120 ? 1 : total < 150 ? 2 : total < 180 ? 3 : 4;
+}
+
 function buildPipTable(rows, projectType, probationSet) {
   const byLeader = groupBy(rows.filter((r) => PIP_PERIODS.includes(r["最新营期"])), (r) => r["班长"]);
   const leaders = [];
@@ -585,7 +595,11 @@ function renderTable(tableEl, rows, columns, { searchInput, metaEl, hintEl, sear
   apply(rows);
 }
 
-function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, projectType }) {
+function renderOverviewTable(
+  tableEl,
+  rows,
+  { searchInput, metaEl, hintEl, projectType, onUpdateClassScore, classScoreOverrides },
+) {
   const columns = [
     "大组",
     "小组",
@@ -605,7 +619,7 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
   const detailRows = [
     { label: "营期", key: "营期" },
     { label: "获客", key: "获客" },
-    { label: "班型", key: "班型" },
+    { label: "班型分", key: "班型" },
     { label: "添加产值", key: "添加产值" },
     { label: "大盘产值", key: "大盘产值" },
     { label: "低于大盘", key: "低于大盘" },
@@ -772,6 +786,32 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
         const box = document.createElement("div");
         box.className = "detail-box";
 
+        const actions = document.createElement("div");
+        actions.className = "detail-actions";
+
+        const leaderName = String(r["班长"] ?? "");
+        const hasOverride =
+          classScoreOverrides instanceof Map &&
+          Array.from(classScoreOverrides.keys()).some((k) => String(k).startsWith(`${leaderName}||`));
+
+        if (typeof onUpdateClassScore === "function") {
+          const resetBtn = document.createElement("button");
+          resetBtn.type = "button";
+          resetBtn.className = "btn tiny tertiary";
+          resetBtn.textContent = "还原该班长";
+          resetBtn.disabled = !hasOverride;
+          resetBtn.addEventListener("click", () => {
+            const t1 = toNumber(r[`营期_-1`]);
+            const t2 = toNumber(r[`营期_-2`]);
+            const t3 = toNumber(r[`营期_-3`]);
+            onUpdateClassScore({ leader: leaderName, period: -1, term: t1, score: null, silent: true });
+            onUpdateClassScore({ leader: leaderName, period: -2, term: t2, score: null, silent: true });
+            onUpdateClassScore({ leader: leaderName, period: -3, term: t3, score: null, silent: false });
+          });
+          actions.appendChild(resetBtn);
+        }
+        box.appendChild(actions);
+
         const cardsContainer = document.createElement("div");
         cardsContainer.className = "period-cards";
 
@@ -789,6 +829,10 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
           const body = document.createElement("div");
           body.className = "period-card-body";
 
+          const leaderName = String(r["班长"] ?? "");
+          const termRaw = r[`营期_${p}`];
+          const termNum = toNumber(termRaw);
+
           for (const item of detailRows) {
             if (item.key === "营期") continue;
             const rowDiv = document.createElement("div");
@@ -801,7 +845,39 @@ function renderOverviewTable(tableEl, rows, { searchInput, metaEl, hintEl, proje
             const val = document.createElement("span");
             val.className = "stat-value";
             const valText = valueTextByKey(item.key, r[`${item.key}_${p}`]);
-            val.textContent = valText || "-";
+            if (item.key === "班型") {
+              const select = document.createElement("select");
+              select.className = "stat-select";
+              const currentRaw = r[`${item.key}_${p}`];
+              const currentNum = typeof currentRaw === "number" && Number.isFinite(currentRaw) ? currentRaw : toNumber(currentRaw);
+              const currentValue = currentNum === null ? "" : String(currentNum);
+              for (const opt of CLASS_SCORE_OPTIONS) {
+                const o = document.createElement("option");
+                o.value = String(opt);
+                o.textContent = String(opt);
+                select.appendChild(o);
+              }
+              if (currentValue) select.value = currentValue;
+              else select.value = "0";
+              select.addEventListener("change", () => {
+                if (typeof onUpdateClassScore !== "function") return;
+                const next = Number(select.value);
+                onUpdateClassScore({ leader: leaderName, period: p, term: termNum, score: next });
+              });
+              val.appendChild(select);
+
+              const reset = document.createElement("button");
+              reset.type = "button";
+              reset.className = "stat-reset";
+              reset.textContent = "还原";
+              reset.addEventListener("click", () => {
+                if (typeof onUpdateClassScore !== "function") return;
+                onUpdateClassScore({ leader: leaderName, period: p, term: termNum, score: null });
+              });
+              val.appendChild(reset);
+            } else {
+              val.textContent = valText || "-";
+            }
 
             if (item.key === "低于大盘" && valText === "是") {
               val.style.color = "var(--danger-text)";
@@ -1286,6 +1362,9 @@ function initApp() {
       evidence: [],
       pip: [],
       probationSet: new Set(),
+      classScoreOverrides: new Map(),
+      baseOverview: null,
+      baseEvidence: null,
       fileName: null,
       rawRows: null
     },
@@ -1294,12 +1373,16 @@ function initApp() {
       evidence: [],
       pip: [],
       probationSet: new Set(),
+      classScoreOverrides: new Map(),
+      baseOverview: null,
+      baseEvidence: null,
       fileName: null,
       rawRows: null
     }
   };
 
   let currentProbationSet = projectCache[currentProjectType].probationSet;
+  let currentClassScoreOverrides = projectCache[currentProjectType].classScoreOverrides;
 
   function setStatus(kind, text) {
     statusPill.className = `pill ${kind || "default"}`.trim();
@@ -1321,6 +1404,59 @@ function initApp() {
     dropzone.tabIndex = enabled ? 0 : -1;
   }
 
+  function handleUpdateClassScore({ leader, period, term, score, silent }) {
+    const termKey = term === null ? `rank:${period}` : `term:${term}`;
+    const key = `${leader}||${termKey}`;
+    const cache = projectCache[currentProjectType];
+    const baseOverview = Array.isArray(cache.baseOverview) ? cache.baseOverview : null;
+    const baseRow =
+      baseOverview && leader ? baseOverview.find((x) => String(x["班长"] ?? "") === leader) : null;
+
+    let nextScore = score;
+    if (nextScore === null) {
+      const base = baseRow ? baseRow[`班型_${period}`] : null;
+      nextScore = typeof base === "number" && Number.isFinite(base) ? base : 0;
+      currentClassScoreOverrides.delete(key);
+    } else {
+      if (!CLASS_SCORE_OPTIONS.includes(nextScore)) return;
+      currentClassScoreOverrides.set(key, nextScore);
+    }
+
+    const row = currentOverview.find((x) => String(x["班长"] ?? "") === leader);
+    if (row) {
+      row[`班型_${period}`] = nextScore;
+      recalcLeaderSummary(row);
+    }
+
+    if (term !== null) {
+      const baseEvidence = Array.isArray(cache.baseEvidence) ? cache.baseEvidence : null;
+      const baseE =
+        baseEvidence && leader
+          ? baseEvidence.find((e) => Number(e["营期"]) === term && String(e["班长"] ?? "") === leader)
+          : null;
+      for (const e of currentEvidence) {
+        if (Number(e["营期"]) === term && String(e["班长"] ?? "") === leader) {
+          if (score === null && baseE) {
+            e["班型得分"] = baseE["班型得分"];
+            e["班型"] = baseE["班型"];
+          } else {
+            e["班型得分"] = nextScore;
+            e["班型"] = nextScore / 10;
+          }
+        }
+      }
+    }
+
+    cache.classScoreOverrides = currentClassScoreOverrides;
+    cache.overview = currentOverview;
+    cache.evidence = currentEvidence;
+
+    if (!silent) {
+      renderBandFilter();
+      renderAll();
+    }
+  }
+
   function renderAll() {
     const filteredOverview =
       activeBand === null ? currentOverview : currentOverview.filter((r) => Number(r["带班数"]) === activeBand);
@@ -1330,6 +1466,8 @@ function initApp() {
       metaEl: overviewMeta,
       hintEl: overviewHint,
       projectType: currentProjectType,
+      onUpdateClassScore: handleUpdateClassScore,
+      classScoreOverrides: currentClassScoreOverrides,
     });
 
     const evidenceColumns = [
@@ -1408,6 +1546,8 @@ function initApp() {
     currentPip = [];
     activeBand = null;
     currentProbationSet = projectCache[currentProjectType].probationSet;
+    currentClassScoreOverrides = projectCache[currentProjectType].classScoreOverrides;
+    currentClassScoreOverrides.clear();
     overviewSearch.value = "";
     evidenceSearch.value = "";
     pipSearch.value = "";
@@ -1434,6 +1574,13 @@ function initApp() {
     currentEvidence = cache.evidence || [];
     currentPip = cache.pip || [];
     currentProbationSet = cache.probationSet;
+    currentClassScoreOverrides = cache.classScoreOverrides;
+    if (!Array.isArray(cache.baseOverview) && Array.isArray(cache.overview) && cache.overview.length > 0) {
+      cache.baseOverview = JSON.parse(JSON.stringify(cache.overview));
+    }
+    if (!Array.isArray(cache.baseEvidence) && Array.isArray(cache.evidence) && cache.evidence.length > 0) {
+      cache.baseEvidence = JSON.parse(JSON.stringify(cache.evidence));
+    }
     activeBand = null;
 
     if (currentOverview.length > 0) {
@@ -1486,6 +1633,15 @@ function initApp() {
     fileMeta.textContent = `${file.name}`;
     overviewHint.textContent = "正在读取并计算，请稍候…";
     evidenceHint.textContent = "";
+    {
+      const cache = projectCache[currentProjectType];
+      cache.probationSet.clear();
+      cache.classScoreOverrides.clear();
+      cache.baseOverview = null;
+      cache.baseEvidence = null;
+      currentProbationSet = cache.probationSet;
+      currentClassScoreOverrides = cache.classScoreOverrides;
+    }
     try {
       const text = await decodeFileToText(file);
       const { rows, headers } = parseTSV(text);
@@ -1656,6 +1812,9 @@ function initApp() {
       cache.overview = overview;
       cache.evidence = evidence;
       cache.pip = pip;
+      cache.classScoreOverrides = currentClassScoreOverrides;
+      cache.baseOverview = JSON.parse(JSON.stringify(overview));
+      cache.baseEvidence = JSON.parse(JSON.stringify(evidence));
       cache.fileName = fileMeta.textContent;
       cache.rawRows = rows;
 
