@@ -1107,6 +1107,11 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
     const project = String(r["项目"] ?? "").trim();
     const term = toNumber(r["营期"]);
     if (term === null) return false;
+
+    if (projectType === "ziyang") {
+      const klass = String(r["班级"] ?? "");
+      if (klass.includes("非标-类目一")) return false;
+    }
     
     // 兼容 V2.0 逻辑：过滤掉英语项目的第 10 期
     if (project === "英语" && term === 10) return false;
@@ -1506,6 +1511,10 @@ function initApp() {
     // 提取去重的班长及其最新营期
     const leaderMap = new Map(); // name -> latest term
     for (const r of rawRows) {
+      if (currentProjectType === "ziyang") {
+        const klass = String(r["班级"] ?? "");
+        if (klass.includes("非标-类目一")) continue;
+      }
       const name = cleanLeaderName(r["班级"], currentProjectType);
       if (!name) continue;
       const term = toNumber(r["营期"]);
