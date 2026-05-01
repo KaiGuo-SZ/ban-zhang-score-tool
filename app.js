@@ -851,6 +851,13 @@ function renderOverviewTable(
               const currentRaw = r[`${item.key}_${p}`];
               const currentNum = typeof currentRaw === "number" && Number.isFinite(currentRaw) ? currentRaw : toNumber(currentRaw);
               const currentValue = currentNum === null ? "" : String(currentNum);
+              const optionValues = new Set(CLASS_SCORE_OPTIONS.map((x) => String(x)));
+              if (currentValue && !optionValues.has(currentValue)) {
+                const o = document.createElement("option");
+                o.value = currentValue;
+                o.textContent = `系统(${currentValue})`;
+                select.appendChild(o);
+              }
               for (const opt of CLASS_SCORE_OPTIONS) {
                 const o = document.createElement("option");
                 o.value = String(opt);
@@ -1258,7 +1265,7 @@ function computeFromRawRows(rawRows, analysisDateStr, projectType, probationSet)
     const add = Number(r["添加人数"]);
     const flow = Number(r["流水"]);
     r["添加产值"] = add > 0 && Number.isFinite(flow) ? flow / add : null;
-    r["班型"] = roundHalfUp(Number(r["获客"]) / 250);
+    r["班型"] = Number.isFinite(add) ? roundHalfUp(add / 250) : null;
     r["班型得分"] = r["班型"] === null ? null : r["班型"] * 10;
     r["大盘产值"] = marketByTerm.get(r["营期"]) ?? null;
     r["低于大盘"] =
