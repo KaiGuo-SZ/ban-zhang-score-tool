@@ -262,7 +262,7 @@ function buildWideTable(rows, projectType, probationSet) {
 
     for (const p of PERIODS) {
       const it = items.find((x) => x["最新营期"] === p);
-      const leads = it?.["获客"] ?? null;
+      const addCount = it?.["添加人数"] ?? null;
       const classType = it?.["班型"] ?? null;
       const classScore = it?.["班型得分"] ?? null;
       const addValue = it?.["添加产值"] ?? null;
@@ -273,7 +273,7 @@ function buildWideTable(rows, projectType, probationSet) {
       const valueScore = it?.["产值得分"] ?? 0;
 
       row[`营期_${p}`] = it?.["营期"] ?? null;
-      row[`获客_${p}`] = leads;
+      row[`添加_${p}`] = addCount === null ? null : Number(addCount);
       row[`班型_${p}`] = classType;
       row[`添加产值_${p}`] = addValue === null ? null : round2(Number(addValue));
       row[`大盘产值_${p}`] = market === null ? null : round2(Number(market));
@@ -618,7 +618,7 @@ function renderOverviewTable(
   ];
   const detailRows = [
     { label: "营期", key: "营期" },
-    { label: "获客", key: "获客" },
+    { label: "添加人数", key: "添加" },
     { label: "班型分", key: "班型" },
     { label: "添加产值", key: "添加产值" },
     { label: "大盘产值", key: "大盘产值" },
